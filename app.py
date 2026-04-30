@@ -1,6 +1,7 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 import sqlite3
 import os
+import datetime
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -86,7 +87,98 @@ def init_db():
 
 @app.route("/")
 def home():
-    return redirect(url_for("beheer"))
+    return redirect(url_for("overzicht"))
+
+# ── Overzicht ──────────────────────────────────────────
+@app.route("/overzicht")
+def overzicht():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen, ritten.pauze_minuten
+        FROM ritten
+        LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+        LEFT JOIN trucks ON ritten.truck_id = trucks.id
+        LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+        ORDER BY ritten.datum DESC
+    """)
+    ritten = cursor.fetchall()
+
+    filialen_per_rit = {}
+    for rit in ritten:
+        cursor.execute("""
+            SELECT filiaalnummer FROM rit_filialen
+            WHERE rit_id = ? ORDER BY volgorde
+        """, (rit[0],))
+        filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
+
+    # Statistieken voor huidige maand als standaard
+    vandaag = datetime.date.today()
+    van = vandaag.replace(day=1).isoformat()
+
+    cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
+    stats_ritten = cursor.fetchone()[0]
+    cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
+    stats_pauze = cursor.fetchone()[0]
+    cursor.execute("""
+        SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf
+        JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?
+    """, (van,))
+    stats_filialen = cursor.fetchone()[0]
+    cursor.execute("""
+        SELECT COUNT(*) FROM schades s
+        JOIN ritten r ON s.rit_id = r.id WHERE r.datum >= ?
+    """, (van,))
+    stats_schades = cursor.fetchone()[0]
+
+    stats = {
+        "ritten": stats_ritten,
+        "pauze": stats_pauze,
+        "filialen": stats_filialen,
+        "schades": stats_schades
+    }
+
+    conn.close()
+    return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit, stats=stats)
+
+# ── Stats API ──────────────────────────────────────────
+@app.route("/stats")
+def stats():
+    periode = request.args.get("periode", "maand")
+    vandaag = datetime.date.today()
+
+    if periode == "dag":
+        van = vandaag.isoformat()
+    elif periode == "week":
+        van = (vandaag - datetime.timedelta(days=vandaag.weekday())).isoformat()
+    elif periode == "maand":
+        van = vandaag.replace(day=1).isoformat()
+    elif periode == "jaar":
+        van = vandaag.replace(month=1, day=1).isoformat()
+    else:
+        van = "2000-01-01"
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
+    ritten = cursor.fetchone()[0]
+    cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
+    pauze = cursor.fetchone()[0]
+    cursor.execute("""
+        SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf
+        JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?
+    """, (van,))
+    filialen = cursor.fetchone()[0]
+    cursor.execute("""
+        SELECT COUNT(*) FROM schades s
+        JOIN ritten r ON s.rit_id = r.id WHERE r.datum >= ?
+    """, (van,))
+    schades = cursor.fetchone()[0]
+
+    conn.close()
+    return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, schades=schades)
 
 # ── Beheer ──────────────────────────────────────────
 @app.route("/beheer")
@@ -142,7 +234,6 @@ def filiaal_toevoegen():
     huisnummer = request.form["huisnummer"]
     postcode = request.form["postcode"]
     plaats = request.form["plaats"]
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     try:
@@ -156,32 +247,21 @@ def filiaal_toevoegen():
     conn.close()
     return redirect(url_for("beheer"))
 
+# ── Rit invoeren ──────────────────────────────────────────
 @app.route("/rit")
 def rit():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-
     cursor.execute("SELECT * FROM chauffeurs")
     chauffeurs = cursor.fetchall()
-
     cursor.execute("SELECT * FROM trucks")
     trucks = cursor.fetchall()
-
     cursor.execute("SELECT * FROM opleggers")
     opleggers = cursor.fetchall()
-
     cursor.execute("SELECT * FROM filialen ORDER BY filiaalnummer")
     filialen = cursor.fetchall()
-
     conn.close()
-
-    return render_template(
-        "rit.html",
-        chauffeurs=chauffeurs,
-        trucks=trucks,
-        opleggers=opleggers,
-        filialen=filialen
-    )
+    return render_template("rit.html", chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen)
 
 @app.route("/rit-opslaan", methods=["POST"])
 def rit_opslaan():
@@ -198,9 +278,8 @@ def rit_opslaan():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen,
-                         pauze_minuten)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten))
 
     rit_id = cursor.lastrowid
@@ -215,17 +294,14 @@ def rit_opslaan():
     schadefotos = request.files.getlist("schadefoto[]")
     schadeomschrijvingen = request.form.getlist("schadeomschrijving[]")
 
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
     for index, foto in enumerate(schadefotos):
         if foto and foto.filename:
             veilige_bestandsnaam = secure_filename(foto.filename)
             opslag_pad = os.path.join(app.config["UPLOAD_FOLDER"], veilige_bestandsnaam)
             foto.save(opslag_pad)
-
-            omschrijving = ""
-
-            if index < len(schadeomschrijvingen):
-                omschrijving = schadeomschrijvingen[index]
-
+            omschrijving = schadeomschrijvingen[index] if index < len(schadeomschrijvingen) else ""
             cursor.execute("""
                 INSERT INTO schades (rit_id, foto_pad, omschrijving)
                 VALUES (?, ?, ?)
@@ -233,41 +309,7 @@ def rit_opslaan():
 
     conn.commit()
     conn.close()
-
     return redirect(url_for("overzicht"))
-
-@app.route("/overzicht")
-def overzicht():
-    conn = sqlite3.connect("ritten.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-                   SELECT ritten.id,
-                          chauffeurs.naam,
-                          trucks.kenteken,
-                          opleggers.opleggernummer,
-                          ritten.datum,
-                          ritten.starttijd,
-                          ritten.eindtijd,
-                          ritten.opmerkingen,
-                          ritten.pauze_minuten
-                   FROM ritten
-                            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
-                            LEFT JOIN trucks ON ritten.truck_id = trucks.id
-                            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-                   ORDER BY ritten.datum DESC
-                   """)
-    ritten = cursor.fetchall()
-
-    filialen_per_rit = {}
-    for rit in ritten:
-        cursor.execute("""
-            SELECT filiaalnummer FROM rit_filialen
-            WHERE rit_id = ? ORDER BY volgorde
-        """, (rit[0],))
-        filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
-
-    conn.close()
-    return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit)
 
 if __name__ == "__main__":
     init_db()
