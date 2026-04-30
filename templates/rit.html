@@ -39,10 +39,18 @@
         <label>Starttijd:</label><br>
         <input type="time" name="starttijd"><br><br>
 
-        <label>Eindtijd:</label><br>
-        <input type="time" name="eindtijd"><br><br>
+<label>Eindtijd:</label><br>
+<input type="time" name="eindtijd"><br><br>
 
-        <label>Filialen:</label><br>
+<label>Pauze (minuten):</label><br>
+<select name="pauze_minuten">
+   <option value="0">Geen pauze</option>
+  {% for i in range(1, 91) %}
+  <option value="{{ i }}">{{ i }} minuten</option>
+  {% endfor %}
+</select><br><br>
+
+<label>Filialen:</label><br>
 
         <div id="filialen">
             <select name="filiaal[]">

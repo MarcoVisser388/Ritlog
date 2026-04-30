@@ -17,6 +17,7 @@
             <th>Oplegger</th>
             <th>Start</th>
             <th>Eind</th>
+            <th>Pauze</th>
             <th>Filialen</th>
             <th>Opmerkingen</th>
         </tr>
@@ -28,6 +29,7 @@
             <td>{{ r[3] }}</td>
             <td>{{ r[5] }}</td>
             <td>{{ r[6] }}</td>
+            <td>{{ r[8] }} min</td>
             <td>{{ filialen_per_rit[r[0]] | join(" → ") }}</td>
             <td>{{ r[7] }}</td>
         </tr>

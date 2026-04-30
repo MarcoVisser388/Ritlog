@@ -192,14 +192,16 @@ def rit_opslaan():
     starttijd = request.form["starttijd"]
     eindtijd = request.form["eindtijd"]
     opmerkingen = request.form["opmerkingen"]
+    pauze_minuten = request.form.get("pauze_minuten", 0)
     filialen = request.form.getlist("filiaal[]")
 
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen))
+    INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen,
+                         pauze_minuten)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten))
 
     rit_id = cursor.lastrowid
 
@@ -239,14 +241,21 @@ def overzicht():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
-               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen
-        FROM ritten
-        LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
-        LEFT JOIN trucks ON ritten.truck_id = trucks.id
-        LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-        ORDER BY ritten.datum DESC
-    """)
+                   SELECT ritten.id,
+                          chauffeurs.naam,
+                          trucks.kenteken,
+                          opleggers.opleggernummer,
+                          ritten.datum,
+                          ritten.starttijd,
+                          ritten.eindtijd,
+                          ritten.opmerkingen,
+                          ritten.pauze_minuten
+                   FROM ritten
+                            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+                            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+                            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+                   ORDER BY ritten.datum DESC
+                   """)
     ritten = cursor.fetchall()
 
     filialen_per_rit = {}
