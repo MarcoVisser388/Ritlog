@@ -1,0 +1,420 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --blauw: #0F2A52;
+    --blauw-mid: #1B3F7A;
+    --blauw-licht: #E8EEF7;
+    --oranje: #F07030;
+    --oranje-licht: #FFF0E8;
+    --grijs: #F5F5F3;
+    --grijs-mid: #E0DED8;
+    --tekst: #1A1A1A;
+    --tekst-zacht: #6B6B6B;
+    --wit: #FFFFFF;
+    --radius: 10px;
+    --groen: #2E7D32;
+    --groen-licht: #E8F5E9;
+    --rood: #C62828;
+    --rood-licht: #FFEBEE;
+}
+
+body {
+    font-family: 'DM Sans', sans-serif;
+    background: #EEECEA;
+    color: var(--tekst);
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* ── Navbar ── */
+.navbar {
+    background: var(--blauw);
+    padding: 0 32px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.logo {
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--wit);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+}
+
+.logo-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--oranje);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-icon svg {
+    width: 18px;
+    height: 18px;
+    fill: white;
+}
+
+.nav-links {
+    display: flex;
+    gap: 4px;
+}
+
+.nav-link {
+    color: rgba(255,255,255,0.6);
+    text-decoration: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.15s;
+}
+
+.nav-link:hover, .nav-link.active {
+    background: rgba(255,255,255,0.12);
+    color: white;
+}
+
+/* ── Layout ── */
+.main {
+    padding: 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.page-header {
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.page-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--blauw);
+    letter-spacing: -0.5px;
+}
+
+.page-sub {
+    font-size: 14px;
+    color: var(--tekst-zacht);
+    margin-top: 4px;
+}
+
+/* ── Statistieken ── */
+.periode-filter {
+    display: flex;
+    gap: 4px;
+    background: var(--wit);
+    border: 1px solid var(--grijs-mid);
+    border-radius: 8px;
+    padding: 4px;
+    margin-bottom: 20px;
+    width: fit-content;
+}
+
+.periode-btn {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    background: transparent;
+    color: var(--tekst-zacht);
+    transition: all 0.15s;
+    font-family: 'DM Sans', sans-serif;
+}
+
+.periode-btn.active, .periode-btn:hover {
+    background: var(--blauw);
+    color: white;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat {
+    background: var(--wit);
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 1px solid var(--grijs-mid);
+}
+
+.stat.accent {
+    background: var(--blauw);
+    border-color: var(--blauw);
+}
+
+.stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--tekst-zacht);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+}
+
+.stat.accent .stat-label { color: rgba(255,255,255,0.55); }
+
+.stat-value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--blauw);
+}
+
+.stat.accent .stat-value { color: var(--wit); }
+
+.stat-sub {
+    font-size: 12px;
+    color: var(--tekst-zacht);
+    margin-top: 4px;
+}
+
+.stat.accent .stat-sub { color: rgba(255,255,255,0.45); }
+
+/* ── Cards ── */
+.card {
+    background: var(--wit);
+    border-radius: var(--radius);
+    border: 1px solid var(--grijs-mid);
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--grijs-mid);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--blauw);
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* ── Buttons ── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    text-decoration: none;
+    transition: all 0.15s;
+    font-family: 'DM Sans', sans-serif;
+}
+
+.btn-primary {
+    background: var(--blauw);
+    color: white;
+}
+
+.btn-primary:hover { background: var(--blauw-mid); }
+
+.btn-oranje {
+    background: var(--oranje);
+    color: white;
+}
+
+.btn-oranje:hover { opacity: 0.9; }
+
+.btn-outline {
+    background: transparent;
+    color: var(--blauw);
+    border: 1px solid var(--grijs-mid);
+}
+
+.btn-outline:hover { background: var(--grijs); }
+
+.btn-danger {
+    background: var(--rood-licht);
+    color: var(--rood);
+    border: 1px solid #FFCDD2;
+}
+
+/* ── Tabel ── */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th {
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--tekst-zacht);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--grijs-mid);
+    background: var(--grijs);
+}
+
+.table td {
+    padding: 12px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--grijs);
+    vertical-align: middle;
+}
+
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: #FAFAF8; }
+
+/* ── Badges ── */
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.badge-groen { background: var(--groen-licht); color: var(--groen); }
+.badge-oranje { background: var(--oranje-licht); color: #C05010; }
+.badge-rood { background: var(--rood-licht); color: var(--rood); }
+
+/* ── Filiaal tags ── */
+.filialen { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.filiaal-tag {
+    background: var(--blauw-licht);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--blauw);
+}
+
+/* ── Formulier ── */
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group.full { grid-column: 1 / -1; }
+
+label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--tekst-zacht);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+input[type="text"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--grijs-mid);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--tekst);
+    background: var(--wit);
+    transition: border-color 0.15s;
+    appearance: auto;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--blauw);
+    box-shadow: 0 0 0 3px rgba(15,42,82,0.08);
+}
+
+textarea { resize: vertical; min-height: 80px; }
+
+/* ── Sectie scheidingslijn ── */
+.section-divider {
+    border: none;
+    border-top: 1px solid var(--grijs-mid);
+    margin: 24px 0;
+}
+
+/* ── Beheer lijsten ── */
+.beheer-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.beheer-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--grijs);
+    border-radius: 7px;
+    font-size: 14px;
+}
+
+.beheer-item-label { font-weight: 500; color: var(--blauw); }
+.beheer-item-sub { font-size: 12px; color: var(--tekst-zacht); margin-top: 2px; }
+
+/* ── Schade upload ── */
+.upload-zone {
+    border: 2px dashed var(--grijs-mid);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.upload-zone:hover { border-color: var(--blauw); background: var(--blauw-licht); }
+.upload-zone-text { font-size: 14px; color: var(--tekst-zacht); margin-top: 8px; }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+    .main { padding: 16px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .form-grid { grid-template-columns: 1fr; }
+    .navbar { padding: 0 16px; }
+    .nav-link span { display: none; }
+}
