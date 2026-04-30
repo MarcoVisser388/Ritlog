@@ -1,13 +1,65 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 import sqlite3
 import os
+import re
 import datetime
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+app.secret_key = "ritlog-geheim-2026"
 
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# ── Validatie functies ──────────────────────────────────────────
+
+def valideer_opleggernummer(nummer):
+    """Moet beginnen met DD, ED, CDD of CED gevolgd door cijfers."""
+    patroon = re.compile(r'^(CDD|CED|DD|ED)\d+$', re.IGNORECASE)
+    return bool(patroon.match(nummer.strip()))
+
+def valideer_kenteken(kenteken):
+    """Minimaal 6 tekens, alleen letters, cijfers en koppeltekens."""
+    patroon = re.compile(r'^[A-Za-z0-9\-]{6,}$')
+    return bool(patroon.match(kenteken.strip()))
+
+def valideer_postcode(postcode):
+    """Formaat: 4 cijfers + spatie + 2 letters (bijv. 1234 AB)."""
+    patroon = re.compile(r'^\d{4}\s[A-Za-z]{2}$')
+    return bool(patroon.match(postcode.strip()))
+
+def valideer_naam(naam):
+    """Niet leeg, minimaal 2 tekens, alleen letters en spaties/koppeltekens."""
+    patroon = re.compile(r'^[A-Za-zÀ-ÿ\s\-\.]{2,}$')
+    return bool(patroon.match(naam.strip()))
+
+def formatteer_straat(straat):
+    """Eerste letter van elk woord hoofdletter."""
+    return straat.strip().title()
+
+def formatteer_plaats(plaats):
+    """Alles hoofdletters."""
+    return plaats.strip().upper()
+
+def formatteer_postcode(postcode):
+    """Postcode hoofdletters en nette spatie."""
+    postcode = postcode.strip().upper()
+    # Zorg voor spatie tussen cijfers en letters
+    patroon = re.compile(r'^(\d{4})\s*([A-Z]{2})$')
+    match = patroon.match(postcode)
+    if match:
+        return f"{match.group(1)} {match.group(2)}"
+    return postcode
+
+def formatteer_opleggernummer(nummer):
+    """Prefix altijd hoofdletters."""
+    return nummer.strip().upper()
+
+def formatteer_kenteken(kenteken):
+    """Kenteken altijd hoofdletters."""
+    return kenteken.strip().upper()
+
+# ── Database ──────────────────────────────────────────
 
 def init_db():
     conn = sqlite3.connect("ritten.db")
@@ -24,14 +76,14 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS trucks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kenteken TEXT NOT NULL
+            kenteken TEXT NOT NULL UNIQUE
         )
     """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS opleggers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            opleggernummer TEXT NOT NULL
+            opleggernummer TEXT NOT NULL UNIQUE
         )
     """)
 
@@ -45,6 +97,7 @@ def init_db():
             starttijd TEXT,
             eindtijd TEXT,
             opmerkingen TEXT,
+            pauze_minuten INTEGER DEFAULT 0,
             FOREIGN KEY (chauffeur_id) REFERENCES chauffeurs(id),
             FOREIGN KEY (truck_id) REFERENCES trucks(id),
             FOREIGN KEY (oplegger_id) REFERENCES opleggers(id)
@@ -85,6 +138,8 @@ def init_db():
     conn.commit()
     conn.close()
 
+# ── Routes ──────────────────────────────────────────
+
 @app.route("/")
 def home():
     return redirect(url_for("overzicht"))
@@ -113,7 +168,6 @@ def overzicht():
         """, (rit[0],))
         filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
 
-    # Statistieken voor huidige maand als standaard
     vandaag = datetime.date.today()
     van = vandaag.replace(day=1).isoformat()
 
@@ -185,55 +239,114 @@ def stats():
 def beheer():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM chauffeurs")
+    cursor.execute("SELECT * FROM chauffeurs ORDER BY naam")
     chauffeurs = cursor.fetchall()
-    cursor.execute("SELECT * FROM trucks")
+    cursor.execute("SELECT * FROM trucks ORDER BY kenteken")
     trucks = cursor.fetchall()
-    cursor.execute("SELECT * FROM opleggers")
+    cursor.execute("SELECT * FROM opleggers WHERE opleggernummer != '' ORDER BY opleggernummer")
     opleggers = cursor.fetchall()
     cursor.execute("SELECT * FROM filialen ORDER BY filiaalnummer")
     filialen = cursor.fetchall()
     conn.close()
     return render_template("beheer.html", chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen)
 
+# ── Chauffeur toevoegen ──────────────────────────────────────────
 @app.route("/chauffeur-toevoegen", methods=["POST"])
 def chauffeur_toevoegen():
-    werknemersnummer = request.form["werknemersnummer"]
-    naam = request.form["naam"]
+    werknemersnummer = request.form.get("werknemersnummer", "").strip()
+    naam = request.form.get("naam", "").strip()
+
+    fouten = []
+    if not werknemersnummer.isdigit():
+        fouten.append("Werknemersnummer mag alleen cijfers bevatten.")
+    if not valideer_naam(naam):
+        fouten.append("Naam is ongeldig. Gebruik alleen letters.")
+
+    if fouten:
+        for fout in fouten:
+            flash(fout, "fout")
+        return redirect(url_for("beheer"))
+
+    naam = naam.title()
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("INSERT INTO chauffeurs (werknemersnummer, naam) VALUES (?, ?)", (werknemersnummer, naam))
     conn.commit()
     conn.close()
+    flash("Chauffeur toegevoegd.", "succes")
     return redirect(url_for("beheer"))
 
+# ── Truck toevoegen ──────────────────────────────────────────
 @app.route("/truck-toevoegen", methods=["POST"])
 def truck_toevoegen():
-    kenteken = request.form["kenteken"]
+    kenteken = request.form.get("kenteken", "").strip()
+
+    if not valideer_kenteken(kenteken):
+        flash("Kenteken is ongeldig. Minimaal 6 tekens, alleen letters, cijfers en koppeltekens.", "fout")
+        return redirect(url_for("beheer"))
+
+    kenteken = formatteer_kenteken(kenteken)
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO trucks (kenteken) VALUES (?)", (kenteken,))
-    conn.commit()
+    try:
+        cursor.execute("INSERT INTO trucks (kenteken) VALUES (?)", (kenteken,))
+        conn.commit()
+        flash("Truck toegevoegd.", "succes")
+    except sqlite3.IntegrityError:
+        flash(f"Kenteken {kenteken} bestaat al.", "fout")
     conn.close()
     return redirect(url_for("beheer"))
 
+# ── Oplegger toevoegen ──────────────────────────────────────────
 @app.route("/oplegger-toevoegen", methods=["POST"])
 def oplegger_toevoegen():
-    opleggernummer = request.form["opleggernummer"]
+    opleggernummer = request.form.get("opleggernummer", "").strip()
+
+    if not valideer_opleggernummer(opleggernummer):
+        flash("Opleggernummer is ongeldig. Moet beginnen met DD, ED, CDD of CED gevolgd door cijfers (bijv. DD1491).", "fout")
+        return redirect(url_for("beheer"))
+
+    opleggernummer = formatteer_opleggernummer(opleggernummer)
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO opleggers (opleggernummer) VALUES (?)", (opleggernummer,))
-    conn.commit()
+    try:
+        cursor.execute("INSERT INTO opleggers (opleggernummer) VALUES (?)", (opleggernummer,))
+        conn.commit()
+        flash("Oplegger toegevoegd.", "succes")
+    except sqlite3.IntegrityError:
+        flash(f"Opleggernummer {opleggernummer} bestaat al.", "fout")
     conn.close()
     return redirect(url_for("beheer"))
 
+# ── Filiaal toevoegen ──────────────────────────────────────────
 @app.route("/filiaal-toevoegen", methods=["POST"])
 def filiaal_toevoegen():
-    filiaalnummer = request.form["filiaalnummer"]
-    straat = request.form["straat"]
-    huisnummer = request.form["huisnummer"]
-    postcode = request.form["postcode"]
-    plaats = request.form["plaats"]
+    filiaalnummer = request.form.get("filiaalnummer", "").strip()
+    straat = request.form.get("straat", "").strip()
+    huisnummer = request.form.get("huisnummer", "").strip()
+    postcode = request.form.get("postcode", "").strip()
+    plaats = request.form.get("plaats", "").strip()
+
+    fouten = []
+
+    if not filiaalnummer.isdigit() or len(filiaalnummer) != 4:
+        fouten.append("Filiaalnummer moet precies 4 cijfers zijn.")
+    if postcode and not valideer_postcode(postcode):
+        fouten.append("Postcode is ongeldig. Gebruik formaat: 1234 AB.")
+
+    if fouten:
+        for fout in fouten:
+            flash(fout, "fout")
+        return redirect(url_for("beheer"))
+
+    # Formattering toepassen
+    straat = formatteer_straat(straat) if straat else ""
+    plaats = formatteer_plaats(plaats) if plaats else ""
+    postcode = formatteer_postcode(postcode) if postcode else ""
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     try:
@@ -242,8 +355,9 @@ def filiaal_toevoegen():
             VALUES (?, ?, ?, ?, ?)
         """, (filiaalnummer, straat, huisnummer, postcode, plaats))
         conn.commit()
+        flash("Filiaal toegevoegd.", "succes")
     except sqlite3.IntegrityError:
-        pass
+        flash(f"Filiaal {filiaalnummer} bestaat al.", "fout")
     conn.close()
     return redirect(url_for("beheer"))
 
@@ -252,11 +366,11 @@ def filiaal_toevoegen():
 def rit():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM chauffeurs")
+    cursor.execute("SELECT * FROM chauffeurs ORDER BY naam")
     chauffeurs = cursor.fetchall()
-    cursor.execute("SELECT * FROM trucks")
+    cursor.execute("SELECT * FROM trucks ORDER BY kenteken")
     trucks = cursor.fetchall()
-    cursor.execute("SELECT * FROM opleggers")
+    cursor.execute("SELECT * FROM opleggers WHERE opleggernummer != '' ORDER BY opleggernummer")
     opleggers = cursor.fetchall()
     cursor.execute("SELECT * FROM filialen ORDER BY filiaalnummer")
     filialen = cursor.fetchall()
@@ -265,15 +379,25 @@ def rit():
 
 @app.route("/rit-opslaan", methods=["POST"])
 def rit_opslaan():
-    chauffeur_id = request.form["chauffeur_id"]
-    truck_id = request.form["truck_id"]
-    oplegger_id = request.form["oplegger_id"]
-    datum = request.form["datum"]
-    starttijd = request.form["starttijd"]
-    eindtijd = request.form["eindtijd"]
-    opmerkingen = request.form["opmerkingen"]
+    chauffeur_id = request.form.get("chauffeur_id", "").strip()
+    truck_id = request.form.get("truck_id", "").strip()
+    oplegger_id = request.form.get("oplegger_id", "").strip()
+    datum = request.form.get("datum", "").strip()
+    starttijd = request.form.get("starttijd", "").strip()
+    eindtijd = request.form.get("eindtijd", "").strip()
+    opmerkingen = request.form.get("opmerkingen", "").strip()
     pauze_minuten = request.form.get("pauze_minuten", 0)
     filialen = request.form.getlist("filiaal[]")
+
+    # Valideer dat IDs integers zijn om injection te voorkomen
+    try:
+        chauffeur_id = int(chauffeur_id)
+        truck_id = int(truck_id)
+        oplegger_id = int(oplegger_id)
+        pauze_minuten = int(pauze_minuten)
+    except (ValueError, TypeError):
+        flash("Ongeldige invoer gedetecteerd.", "fout")
+        return redirect(url_for("rit"))
 
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
