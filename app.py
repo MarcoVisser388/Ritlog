@@ -14,37 +14,29 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # ── Validatie functies ──────────────────────────────────────────
 
 def valideer_opleggernummer(nummer):
-    """Moet beginnen met DD, ED, CDD of CED gevolgd door cijfers."""
     patroon = re.compile(r'^(CDD|CED|DD|ED)\d+$', re.IGNORECASE)
     return bool(patroon.match(nummer.strip()))
 
 def valideer_kenteken(kenteken):
-    """Minimaal 6 tekens, alleen letters, cijfers en koppeltekens."""
     patroon = re.compile(r'^[A-Za-z0-9\-]{6,}$')
     return bool(patroon.match(kenteken.strip()))
 
 def valideer_postcode(postcode):
-    """Formaat: 4 cijfers + spatie + 2 letters (bijv. 1234 AB)."""
     patroon = re.compile(r'^\d{4}\s[A-Za-z]{2}$')
     return bool(patroon.match(postcode.strip()))
 
 def valideer_naam(naam):
-    """Niet leeg, minimaal 2 tekens, alleen letters en spaties/koppeltekens."""
     patroon = re.compile(r'^[A-Za-zÀ-ÿ\s\-\.]{2,}$')
     return bool(patroon.match(naam.strip()))
 
 def formatteer_straat(straat):
-    """Eerste letter van elk woord hoofdletter."""
     return straat.strip().title()
 
 def formatteer_plaats(plaats):
-    """Alles hoofdletters."""
     return plaats.strip().upper()
 
 def formatteer_postcode(postcode):
-    """Postcode hoofdletters en nette spatie."""
     postcode = postcode.strip().upper()
-    # Zorg voor spatie tussen cijfers en letters
     patroon = re.compile(r'^(\d{4})\s*([A-Z]{2})$')
     match = patroon.match(postcode)
     if match:
@@ -52,11 +44,9 @@ def formatteer_postcode(postcode):
     return postcode
 
 def formatteer_opleggernummer(nummer):
-    """Prefix altijd hoofdletters."""
     return nummer.strip().upper()
 
 def formatteer_kenteken(kenteken):
-    """Kenteken altijd hoofdletters."""
     return kenteken.strip().upper()
 
 # ── Database ──────────────────────────────────────────
@@ -173,24 +163,31 @@ def overzicht():
 
     cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
     stats_ritten = cursor.fetchone()[0]
+
     cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
     stats_pauze = cursor.fetchone()[0]
+
     cursor.execute("""
         SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf
         JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?
     """, (van,))
     stats_filialen = cursor.fetchone()[0]
+
     cursor.execute("""
-        SELECT COUNT(*) FROM schades s
-        JOIN ritten r ON s.rit_id = r.id WHERE r.datum >= ?
+        SELECT COALESCE(SUM(
+            (CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) -
+            (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) -
+            CAST(pauze_minuten AS INTEGER)
+        ), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''
     """, (van,))
-    stats_schades = cursor.fetchone()[0]
+    minuten = cursor.fetchone()[0]
+    stats_uren = round(minuten / 60, 1)
 
     stats = {
         "ritten": stats_ritten,
         "pauze": stats_pauze,
         "filialen": stats_filialen,
-        "schades": stats_schades
+        "uren": stats_uren,
     }
 
     conn.close()
@@ -218,21 +215,28 @@ def stats():
 
     cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
     ritten = cursor.fetchone()[0]
+
     cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
     pauze = cursor.fetchone()[0]
+
     cursor.execute("""
         SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf
         JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?
     """, (van,))
     filialen = cursor.fetchone()[0]
+
     cursor.execute("""
-        SELECT COUNT(*) FROM schades s
-        JOIN ritten r ON s.rit_id = r.id WHERE r.datum >= ?
+        SELECT COALESCE(SUM(
+            (CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) -
+            (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) -
+            CAST(pauze_minuten AS INTEGER)
+        ), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''
     """, (van,))
-    schades = cursor.fetchone()[0]
+    minuten = cursor.fetchone()[0]
+    uren = round(minuten / 60, 1)
 
     conn.close()
-    return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, schades=schades)
+    return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, uren=uren)
 
 # ── Beheer ──────────────────────────────────────────
 @app.route("/beheer")
@@ -331,7 +335,6 @@ def filiaal_toevoegen():
     plaats = request.form.get("plaats", "").strip()
 
     fouten = []
-
     if not filiaalnummer.isdigit() or len(filiaalnummer) != 4:
         fouten.append("Filiaalnummer moet precies 4 cijfers zijn.")
     if postcode and not valideer_postcode(postcode):
@@ -342,7 +345,6 @@ def filiaal_toevoegen():
             flash(fout, "fout")
         return redirect(url_for("beheer"))
 
-    # Formattering toepassen
     straat = formatteer_straat(straat) if straat else ""
     plaats = formatteer_plaats(plaats) if plaats else ""
     postcode = formatteer_postcode(postcode) if postcode else ""
@@ -389,7 +391,6 @@ def rit_opslaan():
     pauze_minuten = request.form.get("pauze_minuten", 0)
     filialen = request.form.getlist("filiaal[]")
 
-    # Valideer dat IDs integers zijn om injection te voorkomen
     try:
         chauffeur_id = int(chauffeur_id)
         truck_id = int(truck_id)

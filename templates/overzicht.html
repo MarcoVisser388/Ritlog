@@ -39,16 +39,16 @@
             <div class="stat-value" id="stat-ritten">{{ stats.ritten }}</div>
         </div>
         <div class="stat">
-            <div class="stat-label">Pauzetijd</div>
-            <div class="stat-value" id="stat-pauze">{{ stats.pauze }}</div>
+            <div class="stat-label">Gewerkte uren</div>
+            <div class="stat-value" id="stat-uren">{{ stats.uren }}</div>
         </div>
         <div class="stat">
             <div class="stat-label">Filialen</div>
             <div class="stat-value" id="stat-filialen">{{ stats.filialen }}</div>
         </div>
         <div class="stat">
-            <div class="stat-label">Schades</div>
-            <div class="stat-value" id="stat-schades">{{ stats.schades }}</div>
+            <div class="stat-label">Pauzetijd</div>
+            <div class="stat-value" id="stat-pauze">{{ stats.pauze }}</div>
         </div>
     </div>
 
@@ -131,7 +131,7 @@ function setPeriode(periode, btn) {
             document.getElementById('stat-ritten').textContent = data.ritten;
             document.getElementById('stat-pauze').textContent = data.pauze;
             document.getElementById('stat-filialen').textContent = data.filialen;
-            document.getElementById('stat-schades').textContent = data.schades;
+            document.getElementById('stat-uren').textContent = data.uren;
         });
 }
 </script>
