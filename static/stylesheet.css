@@ -444,11 +444,32 @@ textarea { resize: vertical; min-height: 80px; }
 
 /* ── Desktop aanpassingen ── */
 @media (min-width: 640px) {
-    body { padding-bottom: 0; }
-    .bottom-nav { display: none; }
-    .fab { display: none; }
-    .stats { grid-template-columns: repeat(4, 1fr); }
-    .topbar { padding: 0 32px; height: 60px; }
-    .desktop-nav { display: flex !important; }
-    .main { padding: 28px 32px; }
+    body {
+        padding-bottom: 0;
+    }
+
+    .bottom-nav {
+        display: none;
+    }
+
+    .fab {
+        display: none;
+    }
+
+    .stats {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .topbar {
+        padding: 0 32px;
+        height: 60px;
+    }
+
+    .desktop-nav {
+        display: flex !important;
+    }
+
+    .main {
+        padding: 28px 32px;
+    }
 }
