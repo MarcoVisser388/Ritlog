@@ -43,7 +43,7 @@
                     <div class="form-group">
                         <label>Truck</label>
                         <select name="truck_id" required>
-                            <option value="">— Kies een truck —</option>
+                            <option value="">— Kies truck —</option>
                             {% for t in trucks %}
                             <option value="{{ t[0] }}">{{ t[1] }}</option>
                             {% endfor %}
@@ -52,7 +52,7 @@
                     <div class="form-group">
                         <label>Oplegger</label>
                         <select name="oplegger_id" required>
-                            <option value="">— Kies een oplegger —</option>
+                            <option value="">— Kies oplegger —</option>
                             {% for o in opleggers %}
                             <option value="{{ o[0] }}">{{ o[1] }}</option>
                             {% endfor %}
