@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rit invoeren</title>
+</head>
+<body>
+    <h1>Rit invoeren</h1>
+    <a href="/beheer">Beheer</a> | <a href="/overzicht">Overzicht</a>
+    <hr>
+
+    <form method="POST" action="/rit-opslaan" enctype="multipart/form-data">
+
+        <label>Chauffeur:</label><br>
+        <select name="chauffeur_id">
+            {% for c in chauffeurs %}
+            <option value="{{ c[0] }}">{{ c[2] }} ({{ c[1] }})</option>
+            {% endfor %}
+        </select><br><br>
+
+        <label>Truck:</label><br>
+        <select name="truck_id">
+            {% for t in trucks %}
+            <option value="{{ t[0] }}">{{ t[1] }}</option>
+            {% endfor %}
+        </select><br><br>
+
+        <label>Oplegger:</label><br>
+        <select name="oplegger_id">
+            {% for o in opleggers %}
+            <option value="{{ o[0] }}">{{ o[1] }}</option>
+            {% endfor %}
+        </select><br><br>
+
+        <label>Datum:</label><br>
+        <input type="date" name="datum" id="datum"><br><br>
+
+        <label>Starttijd:</label><br>
+        <input type="time" name="starttijd"><br><br>
+
+        <label>Eindtijd:</label><br>
+        <input type="time" name="eindtijd"><br><br>
+
+        <label>Filialen:</label><br>
+
+        <div id="filialen">
+            <select name="filiaal[]">
+                <option value="">-- Kies filiaal --</option>
+                {% for f in filialen %}
+                <option value="{{ f[1] }}">
+                    {{ f[1] }} - {{ f[2] }} {{ f[3] }}, {{ f[4] }} {{ f[5] }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="button" onclick="filiaalToevoegen()">+ Filiaal toevoegen</button><br><br>
+
+        <label>Opmerkingen:</label><br>
+        <textarea name="opmerkingen" rows="3" cols="30"></textarea><br><br>
+
+        <h3>Schadefoto's</h3>
+
+        <label>Foto uploaden:</label><br>
+        <input type="file" name="schadefoto[]" accept="image/*"><br><br>
+
+        <label>Omschrijving schade:</label><br>
+        <textarea name="schadeomschrijving[]" rows="3" cols="30"></textarea><br><br>
+
+        <button type="button" onclick="schadeToevoegen()">+ Schadefoto toevoegen</button>
+
+        <div id="extra-schades"></div>
+        <br>
+
+        <button type="submit">Rit opslaan</button>
+    </form>
+
+<script>
+    document.getElementById("datum").valueAsDate = new Date();
+
+    function filiaalToevoegen() {
+        const container = document.getElementById("filialen");
+        const eersteSelect = container.querySelector("select");
+        const nieuweSelect = eersteSelect.cloneNode(true);
+        nieuweSelect.selectedIndex = 0;
+        container.appendChild(document.createElement("br"));
+        container.appendChild(nieuweSelect);
+    }
+
+    function schadeToevoegen() {
+        const div = document.getElementById("extra-schades");
+
+        div.appendChild(document.createElement("hr"));
+
+        const fotoLabel = document.createElement("label");
+        fotoLabel.innerText = "Foto uploaden:";
+        div.appendChild(fotoLabel);
+        div.appendChild(document.createElement("br"));
+
+        const fotoInput = document.createElement("input");
+        fotoInput.type = "file";
+        fotoInput.name = "schadefoto[]";
+        fotoInput.accept = "image/*";
+        div.appendChild(fotoInput);
+
+        div.appendChild(document.createElement("br"));
+        div.appendChild(document.createElement("br"));
+
+        const omschrijvingLabel = document.createElement("label");
+        omschrijvingLabel.innerText = "Omschrijving schade:";
+        div.appendChild(omschrijvingLabel);
+        div.appendChild(document.createElement("br"));
+
+        const textarea = document.createElement("textarea");
+        textarea.name = "schadeomschrijving[]";
+        textarea.rows = 3;
+        textarea.cols = 30;
+        div.appendChild(textarea);
+
+        div.appendChild(document.createElement("br"));
+        div.appendChild(document.createElement("br"));
+    }
+</script>
+</body>
+</html>
+
+

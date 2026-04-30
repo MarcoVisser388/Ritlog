@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Beheer</title>
+
+<style>
+body{
+font-family:Arial;
+max-width:1000px;
+margin:auto;
+padding:30px;
+}
+
+h1{
+color:#222;
+}
+
+.section{
+border:1px solid #ddd;
+padding:20px;
+margin-bottom:30px;
+border-radius:8px;
+}
+
+input{
+padding:8px;
+margin:5px;
+}
+
+button{
+padding:8px 15px;
+cursor:pointer;
+}
+
+a{
+text-decoration:none;
+font-weight:bold;
+}
+</style>
+
+</head>
+<body>
+
+<h1>Beheer</h1>
+
+<!-- FIXED LINK -->
+<a href="/rit">Naar ritregistratie</a>
+
+<hr>
+
+<div class="section">
+<h2>Chauffeurs</h2>
+
+<form method="POST" action="/chauffeur-toevoegen">
+<input
+type="text"
+name="werknemersnummer"
+placeholder="Werknemersnummer"
+required>
+
+<input
+type="text"
+name="naam"
+placeholder="Naam"
+required>
+
+<button type="submit">
+Toevoegen
+</button>
+
+</form>
+
+<ul>
+{% for c in chauffeurs %}
+<li>
+{{ c[1] }} - {{ c[2] }}
+</li>
+{% endfor %}
+</ul>
+
+</div>
+
+
+<div class="section">
+<h2>Trucks</h2>
+
+<form method="POST" action="/truck-toevoegen">
+
+<input
+type="text"
+name="kenteken"
+placeholder="Kenteken"
+required>
+
+<button type="submit">
+Toevoegen
+</button>
+
+</form>
+
+<ul>
+{% for t in trucks %}
+<li>{{ t[1] }}</li>
+{% endfor %}
+</ul>
+
+</div>
+
+
+<div class="section">
+<h2>Opleggers</h2>
+
+<form method="POST" action="/oplegger-toevoegen">
+
+<input
+type="text"
+name="opleggernummer"
+placeholder="Opleggernummer"
+required>
+
+<button type="submit">
+Toevoegen
+</button>
+
+</form>
+
+<ul>
+{% for o in opleggers %}
+<li>{{ o[1] }}</li>
+{% endfor %}
+</ul>
+
+</div>
+
+
+
+<div class="section">
+<h2>Filialen</h2>
+
+<form method="POST" action="/filiaal-toevoegen">
+
+<input
+type="text"
+name="filiaalnummer"
+placeholder="Filiaalnummer"
+required>
+
+<input
+type="text"
+name="straat"
+placeholder="Straat">
+
+<input
+type="text"
+name="huisnummer"
+placeholder="Huisnummer">
+
+<input
+type="text"
+name="postcode"
+placeholder="Postcode">
+
+<input
+type="text"
+name="plaats"
+placeholder="Plaats">
+
+<button type="submit">
+Toevoegen
+</button>
+
+</form>
+
+
+<ul>
+{% for f in filialen %}
+<li>
+{{ f[1] }} —
+{{ f[2] }}
+{{ f[3] }},
+{{ f[4] }}
+{{ f[5] }}
+</li>
+{% endfor %}
+</ul>
+
+</div>
+
+
+</body>
+</html>

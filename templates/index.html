@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rittenregistratie</title>
+</head>
+<body>
+    <h1>Nieuwe rit invoeren</h1>
+	<a href="/overzicht">Bekijk alle ritten</a>
+    	<form method="POST" action="/rit-opslaan">
+        <label>Filiaalnummer:</label><br>
+        <input type="text" name="filiaal"><br><br>
+
+        <label>Starttijd:</label><br>
+        <input type="time" name="starttijd"><br><br>
+
+        <label>Eindtijd:</label><br>
+        <input type="time" name="eindtijd"><br><br>
+
+        <button type="submit">Rit opslaan</button>
+    </form>
+</body>
+</html>
