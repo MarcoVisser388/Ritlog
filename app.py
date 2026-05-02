@@ -11,14 +11,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+DC_ADRES = "Perenmarkt 15, 1681 PG Zwaagdijk-Oost, Nederland"
+
+print("API KEY GELADEN:", GOOGLE_API_KEY)
+
 app = Flask(__name__)
 app.secret_key = "ritlog-geheim-2026-xK9mP"
 
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-DC_ADRES = "Industrieweg 4, 1689 ZW Zwaagdijk-Oost, Nederland"
+# ── Validatie functies ──────────────────────────────────────────
 
 def valideer_opleggernummer(nummer):
     patroon = re.compile(r'^(CDD|CED|DD|ED)\d+$', re.IGNORECASE)
@@ -56,6 +60,8 @@ def formatteer_opleggernummer(nummer):
 def formatteer_kenteken(kenteken):
     return kenteken.strip().upper()
 
+# ── Login decorators ──────────────────────────────────────────
+
 def login_vereist(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -78,13 +84,12 @@ def admin_vereist(f):
 # ── Kilometerberekening ──────────────────────────────────────────
 
 def bereken_kilometers(filiaalnummers):
-    """Bereken de totale rijafstand via Google Directions API."""
     if not filiaalnummers or not GOOGLE_API_KEY:
+        print("BEREKEN: geen filialen of geen API key")
         return 0
 
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-
     adressen = []
     for nummer in filiaalnummers:
         cursor.execute("SELECT straat, huisnummer, postcode, plaats FROM filialen WHERE filiaalnummer = ?", (nummer,))
@@ -92,20 +97,20 @@ def bereken_kilometers(filiaalnummers):
         if filiaal and filiaal[0] and filiaal[3]:
             adres = f"{filiaal[0]} {filiaal[1]}, {filiaal[2]}, {filiaal[3]}, Nederland"
             adressen.append(adres)
+            print("ADRES GEVONDEN:", adres)
+        else:
+            print("GEEN ADRES VOOR FILIAAL:", nummer)
     conn.close()
 
     if not adressen:
+        print("BEREKEN: geen adressen gevonden")
         return 0
 
-    # Bouw de waypoints op
-    origin = DC_ADRES
-    destination = DC_ADRES
     waypoints = "|".join(adressen)
-
     url = "https://maps.googleapis.com/maps/api/directions/json"
     params = {
-        "origin": origin,
-        "destination": destination,
+        "origin": DC_ADRES,
+        "destination": DC_ADRES,
         "waypoints": f"optimize:true|{waypoints}",
         "key": GOOGLE_API_KEY,
         "language": "nl",
@@ -115,17 +120,20 @@ def bereken_kilometers(filiaalnummers):
     try:
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
-
+        print("GOOGLE STATUS:", data.get("status"))
+        print("GOOGLE ERROR:", data.get("error_message", "geen"))
         if data.get("status") == "OK":
             totaal_meters = sum(
                 leg["distance"]["value"]
                 for route in data["routes"]
                 for leg in route["legs"]
             )
-            return round(totaal_meters / 1000, 1)
-        else:
-            return 0
-    except Exception:
+            km = round(totaal_meters / 1000, 1)
+            print("KILOMETERS BEREKEND:", km)
+            return km
+        return 0
+    except Exception as e:
+        print("FOUT BIJ API CALL:", e)
         return 0
 
 # ── Database ──────────────────────────────────────────
@@ -215,6 +223,8 @@ def koppel_jevkovski():
         cursor.execute("UPDATE gebruikers SET chauffeur_id = ? WHERE gebruikersnaam = 'jevkovski'", (chauffeur[0],))
         conn.commit()
     conn.close()
+
+# ── Routes ──────────────────────────────────────────
 
 @app.route("/uploads/<path:filename>")
 def uploads(filename):
@@ -588,10 +598,8 @@ def rit_opslaan():
     except (ValueError, TypeError):
         flash("Ongeldige invoer gedetecteerd.", "fout")
         return redirect(url_for("rit"))
-
     filialen_gefilterd = [f for f in filialen if f.strip()]
     kilometers = bereken_kilometers(filialen_gefilterd)
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("""INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, is_demo, kilometers)
@@ -747,10 +755,8 @@ def rit_bewerken_opslaan(rit_id):
         flash("Ongeldige invoer.", "fout")
         conn.close()
         return redirect(url_for("rit_bewerken", rit_id=rit_id))
-
     filialen_gefilterd = [f for f in filialen if f.strip()]
     kilometers = bereken_kilometers(filialen_gefilterd)
-
     cursor.execute("""UPDATE ritten SET truck_id=?, oplegger_id=?, datum=?, starttijd=?, eindtijd=?,
                           opmerkingen=?, pauze_minuten=?, kilometers=? WHERE id=?""",
                    (truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, kilometers, rit_id))

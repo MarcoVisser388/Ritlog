@@ -147,7 +147,7 @@ function setPeriode(periode, btn) {
         .then(r => r.json())
         .then(data => {
             document.getElementById('stat-ritten').textContent = data.ritten;
-            document.getElementById('stat-pauze').textContent = data.pauze;
+            document.getElementById('stat-uren').textContent = data.uren;
             document.getElementById('stat-filialen').textContent = data.filialen;
             document.getElementById('stat-kilometers').textContent = data.kilometers + ' km';
         });
