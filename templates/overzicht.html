@@ -50,8 +50,8 @@
             <div class="stat-value" id="stat-filialen">{{ stats.filialen }}</div>
         </div>
         <div class="stat">
-            <div class="stat-label">Pauzetijd</div>
-            <div class="stat-value" id="stat-pauze">{{ stats.pauze }}</div>
+            <div class="stat-label">Kilometers</div>
+            <div class="stat-value" id="stat-kilometers">{{ stats.kilometers }} km</div>
         </div>
     </div>
 
@@ -149,7 +149,7 @@ function setPeriode(periode, btn) {
             document.getElementById('stat-ritten').textContent = data.ritten;
             document.getElementById('stat-pauze').textContent = data.pauze;
             document.getElementById('stat-filialen').textContent = data.filialen;
-            document.getElementById('stat-uren').textContent = data.uren;
+            document.getElementById('stat-kilometers').textContent = data.kilometers + ' km';
         });
 }
 </script>
