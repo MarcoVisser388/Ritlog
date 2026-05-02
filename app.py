@@ -611,16 +611,12 @@ def rit_opslaan():
 # ── Rit verwijderen ──────────────────────────────────────────
 
 @app.route("/rit-verwijderen/<int:rit_id>", methods=["POST"])
-@login_vereist
+@admin_vereist
 def rit_verwijderen(rit_id):
-    is_admin = session.get("rol") == "admin"
-    chauffeur_id = session.get("chauffeur_id")
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
 
-    # Controleer of de rit van deze chauffeur is
-    cursor.execute("SELECT chauffeur_id FROM ritten WHERE id = ?", (rit_id,))
+    cursor.execute("SELECT id FROM ritten WHERE id = ?", (rit_id,))
     rit = cursor.fetchone()
 
     if not rit:
@@ -628,14 +624,10 @@ def rit_verwijderen(rit_id):
         conn.close()
         return redirect(url_for("overzicht"))
 
-    if not is_admin and rit[0] != chauffeur_id:
-        flash("Je kunt alleen je eigen ritten verwijderen.", "fout")
-        conn.close()
-        return redirect(url_for("overzicht"))
-
     cursor.execute("DELETE FROM rit_filialen WHERE rit_id = ?", (rit_id,))
     cursor.execute("DELETE FROM schades WHERE rit_id = ?", (rit_id,))
     cursor.execute("DELETE FROM ritten WHERE id = ?", (rit_id,))
+
     conn.commit()
     conn.close()
 
