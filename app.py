@@ -18,7 +18,7 @@ UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-DC_ADRES = "Perenmarkt 15, 1681 PG Zwaagdijk-Oost, Nederland"
+DC_ADRES = "Industrieweg 4, 1689 ZW Zwaagdijk-Oost, Nederland"
 
 def valideer_opleggernummer(nummer):
     patroon = re.compile(r'^(CDD|CED|DD|ED)\d+$', re.IGNORECASE)
@@ -115,8 +115,7 @@ def bereken_kilometers(filiaalnummers):
     try:
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
-        print("Google API status:", data.get("status"))
-        print("Google API error:", data.get("error_message", "geen"))
+
         if data.get("status") == "OK":
             totaal_meters = sum(
                 leg["distance"]["value"]
@@ -126,8 +125,7 @@ def bereken_kilometers(filiaalnummers):
             return round(totaal_meters / 1000, 1)
         else:
             return 0
-    except Exception as e:
-        print("Fout bij API call:", e)
+    except Exception:
         return 0
 
 # ── Database ──────────────────────────────────────────
