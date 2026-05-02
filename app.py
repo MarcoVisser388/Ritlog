@@ -4,14 +4,21 @@ import os
 import re
 import datetime
 import bcrypt
+import requests
 from werkzeug.utils import secure_filename
 from functools import wraps
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "ritlog-geheim-2026-xK9mP"
 
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+DC_ADRES = "Perenmarkt 15, 1681 PG Zwaagdijk-Oost, Nederland"
 
 def valideer_opleggernummer(nummer):
     patroon = re.compile(r'^(CDD|CED|DD|ED)\d+$', re.IGNORECASE)
@@ -68,6 +75,63 @@ def admin_vereist(f):
         return f(*args, **kwargs)
     return decorated
 
+# ── Kilometerberekening ──────────────────────────────────────────
+
+def bereken_kilometers(filiaalnummers):
+    """Bereken de totale rijafstand via Google Directions API."""
+    if not filiaalnummers or not GOOGLE_API_KEY:
+        return 0
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
+    adressen = []
+    for nummer in filiaalnummers:
+        cursor.execute("SELECT straat, huisnummer, postcode, plaats FROM filialen WHERE filiaalnummer = ?", (nummer,))
+        filiaal = cursor.fetchone()
+        if filiaal and filiaal[0] and filiaal[3]:
+            adres = f"{filiaal[0]} {filiaal[1]}, {filiaal[2]}, {filiaal[3]}, Nederland"
+            adressen.append(adres)
+    conn.close()
+
+    if not adressen:
+        return 0
+
+    # Bouw de waypoints op
+    origin = DC_ADRES
+    destination = DC_ADRES
+    waypoints = "|".join(adressen)
+
+    url = "https://maps.googleapis.com/maps/api/directions/json"
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "waypoints": f"optimize:true|{waypoints}",
+        "key": GOOGLE_API_KEY,
+        "language": "nl",
+        "region": "nl"
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        print("Google API status:", data.get("status"))
+        print("Google API error:", data.get("error_message", "geen"))
+        if data.get("status") == "OK":
+            totaal_meters = sum(
+                leg["distance"]["value"]
+                for route in data["routes"]
+                for leg in route["legs"]
+            )
+            return round(totaal_meters / 1000, 1)
+        else:
+            return 0
+    except Exception as e:
+        print("Fout bij API call:", e)
+        return 0
+
+# ── Database ──────────────────────────────────────────
+
 def init_db():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
@@ -99,6 +163,7 @@ def init_db():
         opmerkingen TEXT,
         pauze_minuten INTEGER DEFAULT 0,
         is_demo INTEGER DEFAULT 0,
+        kilometers REAL DEFAULT 0,
         FOREIGN KEY (chauffeur_id) REFERENCES chauffeurs(id),
         FOREIGN KEY (truck_id) REFERENCES trucks(id),
         FOREIGN KEY (oplegger_id) REFERENCES opleggers(id))""")
@@ -123,6 +188,10 @@ def init_db():
         plaats TEXT)""")
     try:
         cursor.execute("ALTER TABLE ritten ADD COLUMN is_demo INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE ritten ADD COLUMN kilometers REAL DEFAULT 0")
     except:
         pass
     accounts = [
@@ -195,7 +264,7 @@ def overzicht():
     if is_admin:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -204,7 +273,7 @@ def overzicht():
     elif is_demo:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -213,7 +282,7 @@ def overzicht():
     else:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -256,7 +325,14 @@ def overzicht():
         cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     minuten = cursor.fetchone()[0]
     stats_uren = round(minuten / 60, 1)
-    stats = {"ritten": stats_ritten, "pauze": stats_pauze, "filialen": stats_filialen, "uren": stats_uren}
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
+    stats_kilometers = round(cursor.fetchone()[0], 1)
+    stats = {"ritten": stats_ritten, "pauze": stats_pauze, "filialen": stats_filialen, "uren": stats_uren, "kilometers": stats_kilometers}
     conn.close()
     return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit, stats=stats)
 
@@ -309,8 +385,15 @@ def stats():
         cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     minuten = cursor.fetchone()[0]
     uren = round(minuten / 60, 1)
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
+    kilometers = round(cursor.fetchone()[0], 1)
     conn.close()
-    return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, uren=uren)
+    return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, uren=uren, kilometers=kilometers)
 
 @app.route("/beheer")
 @admin_vereist
@@ -507,15 +590,18 @@ def rit_opslaan():
     except (ValueError, TypeError):
         flash("Ongeldige invoer gedetecteerd.", "fout")
         return redirect(url_for("rit"))
+
+    filialen_gefilterd = [f for f in filialen if f.strip()]
+    kilometers = bereken_kilometers(filialen_gefilterd)
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("""INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, is_demo)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, 1 if is_demo else 0))
+    cursor.execute("""INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, is_demo, kilometers)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, 1 if is_demo else 0, kilometers))
     rit_id = cursor.lastrowid
-    for volgorde, filiaalnummer in enumerate(filialen):
-        if filiaalnummer.strip():
-            cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)", (rit_id, filiaalnummer.strip(), volgorde + 1))
+    for volgorde, filiaalnummer in enumerate(filialen_gefilterd):
+        cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)", (rit_id, filiaalnummer, volgorde + 1))
     schadefotos = request.files.getlist("schadefoto[]")
     schadeomschrijvingen = request.form.getlist("schadeomschrijving[]")
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
@@ -540,7 +626,7 @@ def rit_detail(rit_id):
     cursor = conn.cursor()
     cursor.execute("""SELECT ritten.id, ritten.chauffeur_id, ritten.truck_id, ritten.oplegger_id,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo FROM ritten WHERE id = ?""", (rit_id,))
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers FROM ritten WHERE id = ?""", (rit_id,))
     rit = cursor.fetchone()
     if not rit:
         flash("Rit niet gevonden.", "fout")
@@ -663,14 +749,17 @@ def rit_bewerken_opslaan(rit_id):
         flash("Ongeldige invoer.", "fout")
         conn.close()
         return redirect(url_for("rit_bewerken", rit_id=rit_id))
+
+    filialen_gefilterd = [f for f in filialen if f.strip()]
+    kilometers = bereken_kilometers(filialen_gefilterd)
+
     cursor.execute("""UPDATE ritten SET truck_id=?, oplegger_id=?, datum=?, starttijd=?, eindtijd=?,
-                          opmerkingen=?, pauze_minuten=? WHERE id=?""",
-                   (truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, rit_id))
+                          opmerkingen=?, pauze_minuten=?, kilometers=? WHERE id=?""",
+                   (truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, kilometers, rit_id))
     cursor.execute("DELETE FROM rit_filialen WHERE rit_id = ?", (rit_id,))
-    for volgorde, filiaalnummer in enumerate(filialen):
-        if filiaalnummer.strip():
-            cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)",
-                           (rit_id, filiaalnummer.strip(), volgorde + 1))
+    for volgorde, filiaalnummer in enumerate(filialen_gefilterd):
+        cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)",
+                       (rit_id, filiaalnummer, volgorde + 1))
     conn.commit()
     conn.close()
     flash("Rit bijgewerkt.", "succes")
