@@ -87,9 +87,11 @@
         </div>
         <div style="display:flex;gap:8px;margin-top:10px">
             <a href="/rit-bewerken/{{ r[0] }}" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:13px;font-weight:500;background:var(--blauw-licht);color:var(--blauw);text-decoration:none;">Bewerken</a>
+            {% if session.rol == 'admin' %}
             <form method="POST" action="/rit-verwijderen/{{ r[0] }}" style="flex:1;" onsubmit="return confirm('Weet je zeker dat je deze rit wilt verwijderen?')">
             <button type="submit" style="width:100%;padding:8px;border-radius:8px;font-size:13px;font-weight:500;background:var(--rood-licht);color:var(--rood);border:none;cursor:pointer;">Verwijderen</button>
     </form>
+    {% endif %}
 </div>
         {% endif %}
         {% if r[7] %}
