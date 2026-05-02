@@ -608,6 +608,130 @@ def rit_opslaan():
     conn.commit()
     conn.close()
     return redirect(url_for("overzicht"))
+# ── Rit verwijderen ──────────────────────────────────────────
+
+@app.route("/rit-verwijderen/<int:rit_id>", methods=["POST"])
+@admin_vereist
+def rit_verwijderen(rit_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id FROM ritten WHERE id = ?", (rit_id,))
+    rit = cursor.fetchone()
+
+    if not rit:
+        flash("Rit niet gevonden.", "fout")
+        conn.close()
+        return redirect(url_for("overzicht"))
+
+    cursor.execute("DELETE FROM rit_filialen WHERE rit_id = ?", (rit_id,))
+    cursor.execute("DELETE FROM schades WHERE rit_id = ?", (rit_id,))
+    cursor.execute("DELETE FROM ritten WHERE id = ?", (rit_id,))
+
+    conn.commit()
+    conn.close()
+
+    flash("Rit verwijderd.", "succes")
+    return redirect(url_for("overzicht"))
+
+
+# ── Rit bewerken ──────────────────────────────────────────
+
+@app.route("/rit-bewerken/<int:rit_id>")
+@login_vereist
+def rit_bewerken(rit_id):
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT ritten.id, ritten.chauffeur_id, ritten.truck_id, ritten.oplegger_id,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+               ritten.pauze_minuten
+        FROM ritten WHERE id = ?
+    """, (rit_id,))
+    rit = cursor.fetchone()
+
+    if not rit:
+        flash("Rit niet gevonden.", "fout")
+        conn.close()
+        return redirect(url_for("overzicht"))
+
+    if not is_admin and rit[1] != chauffeur_id:
+        flash("Je kunt alleen je eigen ritten bewerken.", "fout")
+        conn.close()
+        return redirect(url_for("overzicht"))
+
+    cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (rit_id,))
+    huidige_filialen = [f[0] for f in cursor.fetchall()]
+
+    cursor.execute("SELECT * FROM chauffeurs ORDER BY naam")
+    chauffeurs = cursor.fetchall()
+    cursor.execute("SELECT * FROM trucks ORDER BY kenteken")
+    trucks = cursor.fetchall()
+    cursor.execute("SELECT * FROM opleggers WHERE opleggernummer != '' ORDER BY opleggernummer")
+    opleggers = cursor.fetchall()
+    cursor.execute("SELECT * FROM filialen ORDER BY filiaalnummer")
+    filialen = cursor.fetchall()
+
+    conn.close()
+    return render_template("rit_bewerken.html", rit=rit, huidige_filialen=huidige_filialen,
+                           chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen)
+
+
+@app.route("/rit-bewerken-opslaan/<int:rit_id>", methods=["POST"])
+@login_vereist
+def rit_bewerken_opslaan(rit_id):
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT chauffeur_id FROM ritten WHERE id = ?", (rit_id,))
+    rit = cursor.fetchone()
+
+    if not rit or (not is_admin and rit[0] != chauffeur_id):
+        flash("Geen toegang.", "fout")
+        conn.close()
+        return redirect(url_for("overzicht"))
+
+    truck_id = request.form.get("truck_id", "").strip()
+    oplegger_id = request.form.get("oplegger_id", "").strip()
+    datum = request.form.get("datum", "").strip()
+    starttijd = request.form.get("starttijd", "").strip()
+    eindtijd = request.form.get("eindtijd", "").strip()
+    opmerkingen = request.form.get("opmerkingen", "").strip()
+    pauze_minuten = request.form.get("pauze_minuten", 0)
+    filialen = request.form.getlist("filiaal[]")
+
+    try:
+        truck_id = int(truck_id)
+        oplegger_id = int(oplegger_id)
+        pauze_minuten = int(pauze_minuten)
+    except (ValueError, TypeError):
+        flash("Ongeldige invoer.", "fout")
+        conn.close()
+        return redirect(url_for("rit_bewerken", rit_id=rit_id))
+
+    cursor.execute("""
+        UPDATE ritten SET truck_id=?, oplegger_id=?, datum=?, starttijd=?, eindtijd=?,
+                          opmerkingen=?, pauze_minuten=?
+        WHERE id=?
+    """, (truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, rit_id))
+
+    cursor.execute("DELETE FROM rit_filialen WHERE rit_id = ?", (rit_id,))
+    for volgorde, filiaalnummer in enumerate(filialen):
+        if filiaalnummer.strip():
+            cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)",
+                           (rit_id, filiaalnummer.strip(), volgorde + 1))
+
+    conn.commit()
+    conn.close()
+    flash("Rit bijgewerkt.", "succes")
+    return redirect(url_for("overzicht"))
 
 if __name__ == "__main__":
     init_db()
