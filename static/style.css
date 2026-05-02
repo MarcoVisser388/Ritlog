@@ -452,3 +452,19 @@ textarea { resize: vertical; min-height: 80px; }
     .desktop-nav { display: flex !important; }
     .main { padding: 28px 32px; }
 }
+
+input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 48px;
+    color: var(--tekst);
+    background: var(--wit);
+}
+
+input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
