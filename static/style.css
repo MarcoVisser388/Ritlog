@@ -469,3 +469,25 @@ input[type="date"] {
     .desktop-nav { display: flex !important; }
     .main { padding: 28px 32px; }
 }
+
+/* ── Rit knoppen ── */
+.rit-knoppen {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.rit-knop {
+    flex: 1;
+    text-align: center;
+    padding: 8px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    font-family: 'DM Sans', sans-serif;
+}
+.rit-knop-blauw { background: var(--blauw); color: white; }
+.rit-knop-lichtblauw { background: var(--blauw-licht); color: var(--blauw); }
+.rit-knop-rood { background: var(--rood-licht); color: var(--rood); width: 100%; }
