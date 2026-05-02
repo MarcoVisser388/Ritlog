@@ -1,12 +1,14 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, session
 import sqlite3
 import os
 import re
 import datetime
+import bcrypt
 from werkzeug.utils import secure_filename
+from functools import wraps
 
 app = Flask(__name__)
-app.secret_key = "ritlog-geheim-2026"
+app.secret_key = "ritlog-geheim-2026-xK9mP"
 
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
@@ -49,11 +51,43 @@ def formatteer_opleggernummer(nummer):
 def formatteer_kenteken(kenteken):
     return kenteken.strip().upper()
 
+# ── Login decorators ──────────────────────────────────────────
+
+def login_vereist(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "gebruiker_id" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_vereist(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "gebruiker_id" not in session:
+            return redirect(url_for("login"))
+        if session.get("rol") != "admin":
+            flash("Je hebt geen toegang tot deze pagina.", "fout")
+            return redirect(url_for("overzicht"))
+        return f(*args, **kwargs)
+    return decorated
+
 # ── Database ──────────────────────────────────────────
 
 def init_db():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS gebruikers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            gebruikersnaam TEXT NOT NULL UNIQUE,
+            wachtwoord TEXT NOT NULL,
+            rol TEXT NOT NULL DEFAULT 'chauffeur',
+            chauffeur_id INTEGER,
+            FOREIGN KEY (chauffeur_id) REFERENCES chauffeurs(id)
+        )
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS chauffeurs (
@@ -88,6 +122,7 @@ def init_db():
             eindtijd TEXT,
             opmerkingen TEXT,
             pauze_minuten INTEGER DEFAULT 0,
+            is_demo INTEGER DEFAULT 0,
             FOREIGN KEY (chauffeur_id) REFERENCES chauffeurs(id),
             FOREIGN KEY (truck_id) REFERENCES trucks(id),
             FOREIGN KEY (oplegger_id) REFERENCES opleggers(id)
@@ -125,79 +160,181 @@ def init_db():
         )
     """)
 
+    try:
+        cursor.execute("ALTER TABLE ritten ADD COLUMN is_demo INTEGER DEFAULT 0")
+    except:
+        pass
+
+    accounts = [
+        ("admin", "Mvisser1", "admin", None),
+        ("demo", "Ritlog", "demo", None),
+        ("jevkovski", "Mvisser1", "chauffeur", None),
+    ]
+
+    for gebruikersnaam, wachtwoord, rol, chauffeur_id in accounts:
+        cursor.execute("SELECT id FROM gebruikers WHERE gebruikersnaam = ?", (gebruikersnaam,))
+        if not cursor.fetchone():
+            hash_ww = bcrypt.hashpw(wachtwoord.encode(), bcrypt.gensalt()).decode()
+            cursor.execute("""
+                INSERT INTO gebruikers (gebruikersnaam, wachtwoord, rol, chauffeur_id)
+                VALUES (?, ?, ?, ?)
+            """, (gebruikersnaam, hash_ww, rol, chauffeur_id))
+
     conn.commit()
     conn.close()
 
-# ── Routes ──────────────────────────────────────────
+def koppel_jevkovski():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM chauffeurs WHERE naam LIKE '%Visser%' OR naam LIKE '%Marco%'")
+    chauffeur = cursor.fetchone()
+    if chauffeur:
+        cursor.execute("UPDATE gebruikers SET chauffeur_id = ? WHERE gebruikersnaam = 'jevkovski'", (chauffeur[0],))
+        conn.commit()
+    conn.close()
+
+# ── Login / Logout ──────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        gebruikersnaam = request.form.get("gebruikersnaam", "").strip()
+        wachtwoord = request.form.get("wachtwoord", "").strip()
+
+        conn = sqlite3.connect("ritten.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM gebruikers WHERE gebruikersnaam = ?", (gebruikersnaam,))
+        gebruiker = cursor.fetchone()
+        conn.close()
+
+        if gebruiker and bcrypt.checkpw(wachtwoord.encode(), gebruiker[2].encode()):
+            session["gebruiker_id"] = gebruiker[0]
+            session["gebruikersnaam"] = gebruiker[1]
+            session["rol"] = gebruiker[3]
+            session["chauffeur_id"] = gebruiker[4]
+            return redirect(url_for("overzicht"))
+        else:
+            flash("Gebruikersnaam of wachtwoord klopt niet.", "fout")
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 @app.route("/")
 def home():
+    if "gebruiker_id" not in session:
+        return redirect(url_for("login"))
     return redirect(url_for("overzicht"))
 
 # ── Overzicht ──────────────────────────────────────────
+
 @app.route("/overzicht")
+@login_vereist
 def overzicht():
+    is_demo = session.get("rol") == "demo"
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
-               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen, ritten.pauze_minuten
-        FROM ritten
-        LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
-        LEFT JOIN trucks ON ritten.truck_id = trucks.id
-        LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-        ORDER BY ritten.datum DESC
-    """)
+
+    if is_admin:
+        cursor.execute("""
+            SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+                   ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+                   ritten.pauze_minuten, ritten.is_demo
+            FROM ritten
+            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+            ORDER BY ritten.datum DESC
+        """)
+    elif is_demo:
+        cursor.execute("""
+            SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+                   ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+                   ritten.pauze_minuten, ritten.is_demo
+            FROM ritten
+            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+            WHERE ritten.is_demo = 1
+            ORDER BY ritten.datum DESC
+        """)
+    else:
+        cursor.execute("""
+            SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+                   ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+                   ritten.pauze_minuten, ritten.is_demo
+            FROM ritten
+            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+            WHERE ritten.chauffeur_id = ? AND ritten.is_demo = 0
+            ORDER BY ritten.datum DESC
+        """, (chauffeur_id,))
+
     ritten = cursor.fetchall()
 
     filialen_per_rit = {}
     for rit in ritten:
-        cursor.execute("""
-            SELECT filiaalnummer FROM rit_filialen
-            WHERE rit_id = ? ORDER BY volgorde
-        """, (rit[0],))
+        cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (rit[0],))
         filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
 
     vandaag = datetime.date.today()
     van = vandaag.replace(day=1).isoformat()
 
-    cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
+    if is_demo:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     stats_ritten = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     stats_pauze = cursor.fetchone()[0]
 
-    cursor.execute("""
-        SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf
-        JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?
-    """, (van,))
+    if is_demo:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, chauffeur_id))
     stats_filialen = cursor.fetchone()[0]
 
-    cursor.execute("""
-        SELECT COALESCE(SUM(
-            (CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) -
-            (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) -
-            CAST(pauze_minuten AS INTEGER)
-        ), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''
-    """, (van,))
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''", (van,))
+    else:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     minuten = cursor.fetchone()[0]
     stats_uren = round(minuten / 60, 1)
 
-    stats = {
-        "ritten": stats_ritten,
-        "pauze": stats_pauze,
-        "filialen": stats_filialen,
-        "uren": stats_uren,
-    }
+    stats = {"ritten": stats_ritten, "pauze": stats_pauze, "filialen": stats_filialen, "uren": stats_uren}
 
     conn.close()
     return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit, stats=stats)
 
 # ── Stats API ──────────────────────────────────────────
+
 @app.route("/stats")
+@login_vereist
 def stats():
     periode = request.args.get("periode", "maand")
     vandaag = datetime.date.today()
+    is_demo = session.get("rol") == "demo"
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
 
     if periode == "dag":
         van = vandaag.isoformat()
@@ -213,25 +350,36 @@ def stats():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
+    if is_demo:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     ritten = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     pauze = cursor.fetchone()[0]
 
-    cursor.execute("""
-        SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf
-        JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?
-    """, (van,))
+    if is_demo:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?", (van,))
+    else:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, chauffeur_id))
     filialen = cursor.fetchone()[0]
 
-    cursor.execute("""
-        SELECT COALESCE(SUM(
-            (CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) -
-            (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) -
-            CAST(pauze_minuten AS INTEGER)
-        ), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''
-    """, (van,))
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van,))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''", (van,))
+    else:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
     minuten = cursor.fetchone()[0]
     uren = round(minuten / 60, 1)
 
@@ -239,7 +387,9 @@ def stats():
     return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, uren=uren)
 
 # ── Beheer ──────────────────────────────────────────
+
 @app.route("/beheer")
+@admin_vereist
 def beheer():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
@@ -251,28 +401,26 @@ def beheer():
     opleggers = cursor.fetchall()
     cursor.execute("SELECT * FROM filialen ORDER BY filiaalnummer")
     filialen = cursor.fetchall()
+    cursor.execute("SELECT g.id, g.gebruikersnaam, g.rol, c.naam FROM gebruikers g LEFT JOIN chauffeurs c ON g.chauffeur_id = c.id ORDER BY g.rol")
+    gebruikers = cursor.fetchall()
     conn.close()
-    return render_template("beheer.html", chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen)
+    return render_template("beheer.html", chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen, gebruikers=gebruikers)
 
-# ── Chauffeur toevoegen ──────────────────────────────────────────
 @app.route("/chauffeur-toevoegen", methods=["POST"])
+@admin_vereist
 def chauffeur_toevoegen():
     werknemersnummer = request.form.get("werknemersnummer", "").strip()
     naam = request.form.get("naam", "").strip()
-
     fouten = []
     if not werknemersnummer.isdigit():
         fouten.append("Werknemersnummer mag alleen cijfers bevatten.")
     if not valideer_naam(naam):
         fouten.append("Naam is ongeldig. Gebruik alleen letters.")
-
     if fouten:
         for fout in fouten:
             flash(fout, "fout")
         return redirect(url_for("beheer"))
-
     naam = naam.title()
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("INSERT INTO chauffeurs (werknemersnummer, naam) VALUES (?, ?)", (werknemersnummer, naam))
@@ -281,17 +429,14 @@ def chauffeur_toevoegen():
     flash("Chauffeur toegevoegd.", "succes")
     return redirect(url_for("beheer"))
 
-# ── Truck toevoegen ──────────────────────────────────────────
 @app.route("/truck-toevoegen", methods=["POST"])
+@admin_vereist
 def truck_toevoegen():
     kenteken = request.form.get("kenteken", "").strip()
-
     if not valideer_kenteken(kenteken):
-        flash("Kenteken is ongeldig. Minimaal 6 tekens, alleen letters, cijfers en koppeltekens.", "fout")
+        flash("Kenteken is ongeldig.", "fout")
         return redirect(url_for("beheer"))
-
     kenteken = formatteer_kenteken(kenteken)
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     try:
@@ -303,17 +448,14 @@ def truck_toevoegen():
     conn.close()
     return redirect(url_for("beheer"))
 
-# ── Oplegger toevoegen ──────────────────────────────────────────
 @app.route("/oplegger-toevoegen", methods=["POST"])
+@admin_vereist
 def oplegger_toevoegen():
     opleggernummer = request.form.get("opleggernummer", "").strip()
-
     if not valideer_opleggernummer(opleggernummer):
-        flash("Opleggernummer is ongeldig. Moet beginnen met DD, ED, CDD of CED gevolgd door cijfers (bijv. DD1491).", "fout")
+        flash("Opleggernummer is ongeldig. Moet beginnen met DD, ED, CDD of CED gevolgd door cijfers.", "fout")
         return redirect(url_for("beheer"))
-
     opleggernummer = formatteer_opleggernummer(opleggernummer)
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     try:
@@ -325,37 +467,30 @@ def oplegger_toevoegen():
     conn.close()
     return redirect(url_for("beheer"))
 
-# ── Filiaal toevoegen ──────────────────────────────────────────
 @app.route("/filiaal-toevoegen", methods=["POST"])
+@admin_vereist
 def filiaal_toevoegen():
     filiaalnummer = request.form.get("filiaalnummer", "").strip()
     straat = request.form.get("straat", "").strip()
     huisnummer = request.form.get("huisnummer", "").strip()
     postcode = request.form.get("postcode", "").strip()
     plaats = request.form.get("plaats", "").strip()
-
     fouten = []
     if not filiaalnummer.isdigit() or len(filiaalnummer) != 4:
         fouten.append("Filiaalnummer moet precies 4 cijfers zijn.")
     if postcode and not valideer_postcode(postcode):
         fouten.append("Postcode is ongeldig. Gebruik formaat: 1234 AB.")
-
     if fouten:
         for fout in fouten:
             flash(fout, "fout")
         return redirect(url_for("beheer"))
-
     straat = formatteer_straat(straat) if straat else ""
     plaats = formatteer_plaats(plaats) if plaats else ""
     postcode = formatteer_postcode(postcode) if postcode else ""
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     try:
-        cursor.execute("""
-            INSERT INTO filialen (filiaalnummer, straat, huisnummer, postcode, plaats)
-            VALUES (?, ?, ?, ?, ?)
-        """, (filiaalnummer, straat, huisnummer, postcode, plaats))
+        cursor.execute("INSERT INTO filialen (filiaalnummer, straat, huisnummer, postcode, plaats) VALUES (?, ?, ?, ?, ?)", (filiaalnummer, straat, huisnummer, postcode, plaats))
         conn.commit()
         flash("Filiaal toegevoegd.", "succes")
     except sqlite3.IntegrityError:
@@ -363,12 +498,62 @@ def filiaal_toevoegen():
     conn.close()
     return redirect(url_for("beheer"))
 
-# ── Rit invoeren ──────────────────────────────────────────
-@app.route("/rit")
-def rit():
+@app.route("/gebruiker-toevoegen", methods=["POST"])
+@admin_vereist
+def gebruiker_toevoegen():
+    gebruikersnaam = request.form.get("gebruikersnaam", "").strip()
+    wachtwoord = request.form.get("wachtwoord", "").strip()
+    rol = request.form.get("rol", "chauffeur").strip()
+    chauffeur_id = request.form.get("chauffeur_id", None)
+    if not gebruikersnaam or not wachtwoord:
+        flash("Gebruikersnaam en wachtwoord zijn verplicht.", "fout")
+        return redirect(url_for("beheer"))
+    if chauffeur_id == "":
+        chauffeur_id = None
+    hash_ww = bcrypt.hashpw(wachtwoord.encode(), bcrypt.gensalt()).decode()
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM chauffeurs ORDER BY naam")
+    try:
+        cursor.execute("INSERT INTO gebruikers (gebruikersnaam, wachtwoord, rol, chauffeur_id) VALUES (?, ?, ?, ?)", (gebruikersnaam, hash_ww, rol, chauffeur_id))
+        conn.commit()
+        flash("Gebruiker toegevoegd.", "succes")
+    except sqlite3.IntegrityError:
+        flash(f"Gebruikersnaam {gebruikersnaam} bestaat al.", "fout")
+    conn.close()
+    return redirect(url_for("beheer"))
+
+@app.route("/demo-wissen", methods=["POST"])
+@admin_vereist
+def demo_wissen():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM ritten WHERE is_demo = 1")
+    demo_ritten = [r[0] for r in cursor.fetchall()]
+    for rit_id in demo_ritten:
+        cursor.execute("DELETE FROM rit_filialen WHERE rit_id = ?", (rit_id,))
+        cursor.execute("DELETE FROM schades WHERE rit_id = ?", (rit_id,))
+    cursor.execute("DELETE FROM ritten WHERE is_demo = 1")
+    conn.commit()
+    conn.close()
+    flash("Alle demo ritten zijn verwijderd.", "succes")
+    return redirect(url_for("beheer"))
+
+# ── Rit invoeren ──────────────────────────────────────────
+
+@app.route("/rit")
+@login_vereist
+def rit():
+    is_demo = session.get("rol") == "demo"
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    if is_admin:
+        cursor.execute("SELECT * FROM chauffeurs ORDER BY naam")
+    elif is_demo:
+        cursor.execute("SELECT * FROM chauffeurs WHERE naam = 'Demo Chauffeur'")
+    else:
+        cursor.execute("SELECT * FROM chauffeurs WHERE id = ?", (chauffeur_id,))
     chauffeurs = cursor.fetchall()
     cursor.execute("SELECT * FROM trucks ORDER BY kenteken")
     trucks = cursor.fetchall()
@@ -380,7 +565,9 @@ def rit():
     return render_template("rit.html", chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen)
 
 @app.route("/rit-opslaan", methods=["POST"])
+@login_vereist
 def rit_opslaan():
+    is_demo = session.get("rol") == "demo"
     chauffeur_id = request.form.get("chauffeur_id", "").strip()
     truck_id = request.form.get("truck_id", "").strip()
     oplegger_id = request.form.get("oplegger_id", "").strip()
@@ -390,7 +577,6 @@ def rit_opslaan():
     opmerkingen = request.form.get("opmerkingen", "").strip()
     pauze_minuten = request.form.get("pauze_minuten", 0)
     filialen = request.form.getlist("filiaal[]")
-
     try:
         chauffeur_id = int(chauffeur_id)
         truck_id = int(truck_id)
@@ -399,43 +585,31 @@ def rit_opslaan():
     except (ValueError, TypeError):
         flash("Ongeldige invoer gedetecteerd.", "fout")
         return redirect(url_for("rit"))
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten))
-
+        INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, is_demo)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, 1 if is_demo else 0))
     rit_id = cursor.lastrowid
-
     for volgorde, filiaalnummer in enumerate(filialen):
         if filiaalnummer.strip():
-            cursor.execute("""
-                INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde)
-                VALUES (?, ?, ?)
-            """, (rit_id, filiaalnummer.strip(), volgorde + 1))
-
+            cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)", (rit_id, filiaalnummer.strip(), volgorde + 1))
     schadefotos = request.files.getlist("schadefoto[]")
     schadeomschrijvingen = request.form.getlist("schadeomschrijving[]")
-
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-
     for index, foto in enumerate(schadefotos):
         if foto and foto.filename:
             veilige_bestandsnaam = secure_filename(foto.filename)
             opslag_pad = os.path.join(app.config["UPLOAD_FOLDER"], veilige_bestandsnaam)
             foto.save(opslag_pad)
             omschrijving = schadeomschrijvingen[index] if index < len(schadeomschrijvingen) else ""
-            cursor.execute("""
-                INSERT INTO schades (rit_id, foto_pad, omschrijving)
-                VALUES (?, ?, ?)
-            """, (rit_id, opslag_pad, omschrijving))
-
+            cursor.execute("INSERT INTO schades (rit_id, foto_pad, omschrijving) VALUES (?, ?, ?)", (rit_id, opslag_pad, omschrijving))
     conn.commit()
     conn.close()
     return redirect(url_for("overzicht"))
 
 if __name__ == "__main__":
     init_db()
+    koppel_jevkovski()
     app.run(debug=True, host='0.0.0.0')

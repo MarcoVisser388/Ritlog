@@ -329,6 +329,9 @@ label {
 input[type="text"],
 input[type="date"],
 input[type="time"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
 select,
 textarea {
     width: 100%;
@@ -341,6 +344,7 @@ textarea {
     background: var(--wit);
     transition: border-color 0.15s;
     -webkit-appearance: auto;
+    appearance: auto;
 }
 
 input[type="file"] {
@@ -358,7 +362,20 @@ input:focus, select:focus, textarea:focus {
     border-color: var(--blauw);
     box-shadow: 0 0 0 3px rgba(15,42,82,0.08);
 }
+
 textarea { resize: vertical; min-height: 80px; }
+
+input[type="time"] {
+    -webkit-appearance: textfield;
+    min-height: 48px;
+}
+
+input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    max-width: 100%;
+}
 
 /* ── DC label ── */
 .dc-label {
@@ -451,20 +468,4 @@ textarea { resize: vertical; min-height: 80px; }
     .topbar { padding: 0 32px; height: 60px; }
     .desktop-nav { display: flex !important; }
     .main { padding: 28px 32px; }
-}
-
-input[type="time"] {
-    -webkit-appearance: none;
-    appearance: none;
-    min-height: 48px;
-    color: var(--tekst);
-    background: var(--wit);
-}
-
-input[type="date"] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
 }
