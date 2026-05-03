@@ -14,8 +14,6 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DC_ADRES = "Perenmarkt 15, 1681 PG Zwaagdijk-Oost, Nederland"
 
-print("API KEY GELADEN:", GOOGLE_API_KEY)
-
 app = Flask(__name__)
 app.secret_key = "ritlog-geheim-2026-xK9mP"
 
@@ -89,9 +87,7 @@ def admin_vereist(f):
 
 def bereken_kilometers(filiaalnummers):
     if not filiaalnummers or not GOOGLE_API_KEY:
-        print("BEREKEN: geen filialen of geen API key")
         return 0
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     adressen = []
@@ -101,15 +97,9 @@ def bereken_kilometers(filiaalnummers):
         if filiaal and filiaal[0] and filiaal[3]:
             adres = f"{filiaal[0]} {filiaal[1]}, {filiaal[2]}, {filiaal[3]}, Nederland"
             adressen.append(adres)
-            print("ADRES GEVONDEN:", adres)
-        else:
-            print("GEEN ADRES VOOR FILIAAL:", nummer)
     conn.close()
-
     if not adressen:
-        print("BEREKEN: geen adressen gevonden")
         return 0
-
     waypoints = "|".join(adressen)
     url = "https://maps.googleapis.com/maps/api/directions/json"
     params = {
@@ -120,21 +110,16 @@ def bereken_kilometers(filiaalnummers):
         "language": "nl",
         "region": "nl"
     }
-
     try:
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
-        print("GOOGLE STATUS:", data.get("status"))
-        print("GOOGLE ERROR:", data.get("error_message", "geen"))
         if data.get("status") == "OK":
             totaal_meters = sum(
                 leg["distance"]["value"]
                 for route in data["routes"]
                 for leg in route["legs"]
             )
-            km = round(totaal_meters / 1000, 1)
-            print("KILOMETERS BEREKEND:", km)
-            return km
+            return round(totaal_meters / 1000, 1)
         return 0
     except Exception as e:
         print("FOUT BIJ API CALL:", e)
@@ -228,6 +213,14 @@ def koppel_jevkovski():
         conn.commit()
     conn.close()
 
+def get_van_tot():
+    vandaag = datetime.date.today()
+    van = request.args.get("van", vandaag.replace(day=1).isoformat())
+    tot = request.args.get("tot", vandaag.replace(
+        day=1, month=vandaag.month % 12 + 1
+    ).isoformat() if vandaag.month < 12 else f"{vandaag.year}-12-31")
+    return van, tot
+
 # ── Routes ──────────────────────────────────────────
 
 @app.route("/uploads/<path:filename>")
@@ -271,8 +264,155 @@ def overzicht():
     is_demo = session.get("rol") == "demo"
     is_admin = session.get("rol") == "admin"
     chauffeur_id = session.get("chauffeur_id")
+    vandaag = datetime.date.today()
+    van = vandaag.replace(day=1).isoformat()
+    tot = vandaag.isoformat()
+
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
+
+    if is_admin:
+        cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END
+            FROM ritten
+            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+            LEFT JOIN schades ON schades.rit_id = ritten.id
+            WHERE ritten.datum >= ? AND ritten.datum <= ?
+            GROUP BY ritten.id ORDER BY ritten.datum DESC""", (van, tot))
+    elif is_demo:
+        cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END
+            FROM ritten
+            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+            LEFT JOIN schades ON schades.rit_id = ritten.id
+            WHERE ritten.is_demo = 1 AND ritten.datum >= ? AND ritten.datum <= ?
+            GROUP BY ritten.id ORDER BY ritten.datum DESC""", (van, tot))
+    else:
+        cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END
+            FROM ritten
+            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            LEFT JOIN trucks ON ritten.truck_id = trucks.id
+            LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+            LEFT JOIN schades ON schades.rit_id = ritten.id
+            WHERE ritten.chauffeur_id = ? AND ritten.is_demo = 0 AND ritten.datum >= ? AND ritten.datum <= ?
+            GROUP BY ritten.id ORDER BY ritten.datum DESC""", (chauffeur_id, van, tot))
+
+    ritten = cursor.fetchall()
+    filialen_per_rit = {}
+    for rit in ritten:
+        cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (rit[0],))
+        filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
+
+    if is_demo:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ?", (van, tot))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+    stats_ritten = cursor.fetchone()[0]
+
+    if is_demo:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ?", (van, tot))
+    else:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, tot, chauffeur_id))
+    stats_filialen = cursor.fetchone()[0]
+
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != ''", (van, tot))
+    else:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+    minuten = cursor.fetchone()[0]
+    stats_uren = round(minuten / 60, 1)
+
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ?", (van, tot))
+    else:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+    stats_kilometers = round(cursor.fetchone()[0], 1)
+
+    stats = {"ritten": stats_ritten, "filialen": stats_filialen, "uren": stats_uren, "kilometers": stats_kilometers}
+    conn.close()
+    return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit, stats=stats)
+
+@app.route("/stats")
+@login_vereist
+def stats():
+    is_demo = session.get("rol") == "demo"
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
+    vandaag = datetime.date.today()
+    van = request.args.get("van", vandaag.replace(day=1).isoformat())
+    tot = request.args.get("tot", vandaag.isoformat())
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
+    if is_demo:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ?", (van, tot))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+    ritten = cursor.fetchone()[0]
+
+    if is_demo:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ?", (van, tot))
+    else:
+        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, tot, chauffeur_id))
+    filialen = cursor.fetchone()[0]
+
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != ''", (van, tot))
+    else:
+        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+    minuten = cursor.fetchone()[0]
+    uren = round(minuten / 60, 1)
+
+    if is_demo:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
+    elif is_admin:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ?", (van, tot))
+    else:
+        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+    kilometers = round(cursor.fetchone()[0], 1)
+
+    conn.close()
+    return jsonify(ritten=ritten, filialen=filialen, uren=uren, kilometers=kilometers)
+
+@app.route("/overzicht-data")
+@login_vereist
+def overzicht_data():
+    is_demo = session.get("rol") == "demo"
+    is_admin = session.get("rol") == "admin"
+    chauffeur_id = session.get("chauffeur_id")
+    vandaag = datetime.date.today()
+    van = request.args.get("van", vandaag.replace(day=1).isoformat())
+    tot = request.args.get("tot", vandaag.isoformat())
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+
     if is_admin:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
@@ -281,7 +421,8 @@ def overzicht():
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-            ORDER BY ritten.datum DESC""")
+            WHERE ritten.datum >= ? AND ritten.datum <= ?
+            ORDER BY ritten.datum DESC""", (van, tot))
     elif is_demo:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
@@ -290,7 +431,8 @@ def overzicht():
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-            WHERE ritten.is_demo = 1 ORDER BY ritten.datum DESC""")
+            WHERE ritten.is_demo = 1 AND ritten.datum >= ? AND ritten.datum <= ?
+            ORDER BY ritten.datum DESC""", (van, tot))
     else:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
@@ -299,113 +441,24 @@ def overzicht():
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-            WHERE ritten.chauffeur_id = ? AND ritten.is_demo = 0
-            ORDER BY ritten.datum DESC""", (chauffeur_id,))
-    ritten = cursor.fetchall()
-    filialen_per_rit = {}
-    for rit in ritten:
-        cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (rit[0],))
-        filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
-    vandaag = datetime.date.today()
-    van = vandaag.replace(day=1).isoformat()
-    if is_demo:
-        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    stats_ritten = cursor.fetchone()[0]
-    if is_demo:
-        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    stats_pauze = cursor.fetchone()[0]
-    if is_demo:
-        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, chauffeur_id))
-    stats_filialen = cursor.fetchone()[0]
-    if is_demo:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''", (van,))
-    else:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    minuten = cursor.fetchone()[0]
-    stats_uren = round(minuten / 60, 1)
-    if is_demo:
-        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    stats_kilometers = round(cursor.fetchone()[0], 1)
-    stats = {"ritten": stats_ritten, "pauze": stats_pauze, "filialen": stats_filialen, "uren": stats_uren, "kilometers": stats_kilometers}
-    conn.close()
-    return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit, stats=stats)
+            WHERE ritten.chauffeur_id = ? AND ritten.is_demo = 0 AND ritten.datum >= ? AND ritten.datum <= ?
+            ORDER BY ritten.datum DESC""", (chauffeur_id, van, tot))
 
-@app.route("/stats")
-@login_vereist
-def stats():
-    periode = request.args.get("periode", "maand")
-    vandaag = datetime.date.today()
-    is_demo = session.get("rol") == "demo"
-    is_admin = session.get("rol") == "admin"
-    chauffeur_id = session.get("chauffeur_id")
-    if periode == "dag":
-        van = vandaag.isoformat()
-    elif periode == "week":
-        van = (vandaag - datetime.timedelta(days=vandaag.weekday())).isoformat()
-    elif periode == "maand":
-        van = vandaag.replace(day=1).isoformat()
-    elif periode == "jaar":
-        van = vandaag.replace(month=1, day=1).isoformat()
-    else:
-        van = "2000-01-01"
-    conn = sqlite3.connect("ritten.db")
-    cursor = conn.cursor()
-    if is_demo:
-        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    ritten = cursor.fetchone()[0]
-    if is_demo:
-        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COALESCE(SUM(pauze_minuten), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    pauze = cursor.fetchone()[0]
-    if is_demo:
-        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, chauffeur_id))
-    filialen = cursor.fetchone()[0]
-    if is_demo:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != ''", (van,))
-    else:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    minuten = cursor.fetchone()[0]
-    uren = round(minuten / 60, 1)
-    if is_demo:
-        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND is_demo = 1", (van,))
-    elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ?", (van,))
-    else:
-        cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND chauffeur_id = ? AND is_demo = 0", (van, chauffeur_id))
-    kilometers = round(cursor.fetchone()[0], 1)
+    ritten = cursor.fetchall()
+    resultaat = []
+    for r in ritten:
+        cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (r[0],))
+        filialen = [f[0] for f in cursor.fetchall()]
+        cursor.execute("SELECT COUNT(*) FROM schades WHERE rit_id = ?", (r[0],))
+        heeft_schade = cursor.fetchone()[0] > 0
+        resultaat.append({
+            "id": r[0], "chauffeur": r[1], "truck": r[2], "oplegger": r[3],
+            "datum": r[4], "starttijd": r[5], "eindtijd": r[6],
+            "opmerkingen": r[7], "pauze_minuten": r[8], "kilometers": r[10],
+            "filialen": filialen, "heeft_schade": heeft_schade, "is_admin": is_admin
+        })
     conn.close()
-    return jsonify(ritten=ritten, pauze=pauze, filialen=filialen, uren=uren, kilometers=kilometers)
+    return jsonify({"ritten": resultaat})
 
 @app.route("/beheer")
 @admin_vereist
@@ -777,17 +830,14 @@ def rit_bewerken_opslaan(rit_id):
 def api_ritten():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+    cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.pauze_minuten,
                ritten.kilometers, ritten.opmerkingen
         FROM ritten
         LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
         LEFT JOIN trucks ON ritten.truck_id = trucks.id
         LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
-        WHERE ritten.is_demo = 0
-        ORDER BY ritten.datum DESC
-    """)
+        WHERE ritten.is_demo = 0 ORDER BY ritten.datum DESC""")
     ritten = cursor.fetchall()
     conn.close()
     return jsonify([{"id": r[0], "chauffeur": r[1], "truck": r[2], "oplegger": r[3],
@@ -835,13 +885,9 @@ def api_opleggers():
 def api_rit_filialen():
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT rf.rit_id, rf.filiaalnummer, rf.volgorde
-        FROM rit_filialen rf
-        JOIN ritten r ON rf.rit_id = r.id
-        WHERE r.is_demo = 0
-        ORDER BY rf.rit_id, rf.volgorde
-    """)
+    cursor.execute("""SELECT rf.rit_id, rf.filiaalnummer, rf.volgorde
+        FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id
+        WHERE r.is_demo = 0 ORDER BY rf.rit_id, rf.volgorde""")
     rit_filialen = cursor.fetchall()
     conn.close()
     return jsonify([{"rit_id": r[0], "filiaalnummer": r[1], "volgorde": r[2]} for r in rit_filialen])

@@ -494,3 +494,29 @@ input[type="date"] {
 .rit-knop-blauw { background: var(--blauw); color: white; }
 .rit-knop-lichtblauw { background: var(--blauw-licht); color: var(--blauw); }
 .rit-knop-rood { background: var(--rood-licht); color: var(--rood); width: 100%; }
+
+/* ── Periode navigator ── */
+.navigator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--wit);
+    border: 1px solid var(--grijs-mid);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+}
+.nav-pijl {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--tekst);
+    padding: 0 8px;
+    line-height: 1;
+}
+.nav-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--tekst);
+}
