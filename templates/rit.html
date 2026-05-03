@@ -18,7 +18,9 @@
     <div class="desktop-nav">
         <a class="desktop-nav-link" href="/overzicht">Overzicht</a>
         <a class="desktop-nav-link active" href="/rit">Rit invoeren</a>
+        {% if session.rol == 'admin' %}
         <a class="desktop-nav-link" href="/beheer">Beheer</a>
+        {% endif %}
         <a class="desktop-nav-link" href="/logout">Uitloggen</a>
     </div>
 </nav>
@@ -27,7 +29,7 @@
     <div class="greeting">Rit invoeren</div>
     <div class="greeting-sub">Vanuit Distributiecentrum Zwaagdijk-Oost</div>
 
-    <form method="POST" action="/rit-opslaan" enctype="multipart/form-data">
+    <form method="POST" action="/rit-opslaan" enctype="multipart/form-data" id="rit-form">
 
         <div class="card">
             <div class="card-header"><span class="card-title">Voertuig & chauffeur</span></div>
@@ -43,7 +45,7 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>Truck</label>
-                        <select name="truck_id" required>
+                        <select name="truck_id" id="truck_id">
                             <option value="">— Kies truck —</option>
                             {% for t in trucks %}
                             <option value="{{ t[0] }}">{{ t[1] }}</option>
@@ -52,7 +54,7 @@
                     </div>
                     <div class="form-group">
                         <label>Oplegger</label>
-                        <select name="oplegger_id" required>
+                        <select name="oplegger_id" id="oplegger_id">
                             <option value="">— Kies oplegger —</option>
                             {% for o in opleggers %}
                             <option value="{{ o[0] }}">{{ o[1] }}</option>
@@ -73,11 +75,11 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>Starttijd</label>
-                        <input type="time" name="starttijd">
+                        <input type="time" name="starttijd" id="starttijd">
                     </div>
                     <div class="form-group">
                         <label>Eindtijd</label>
-                        <input type="time" name="eindtijd">
+                        <input type="time" name="eindtijd" id="eindtijd">
                     </div>
                 </div>
                 <div class="form-group">
@@ -163,10 +165,12 @@
         <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
         <span>Rit invoeren</span>
     </a>
+    {% if session.rol == 'admin' %}
     <a class="nav-item" href="/beheer">
         <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
         <span>Beheer</span>
     </a>
+    {% endif %}
     <a class="nav-item" href="/logout">
         <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
         <span>Uitloggen</span>
@@ -199,6 +203,60 @@
             </div>`;
         container.appendChild(blok);
     }
+
+    document.getElementById("rit-form").addEventListener("submit", function(e) {
+        let fouten = [];
+
+        const truckEl = document.getElementById("truck_id");
+        const opleggerEl = document.getElementById("oplegger_id");
+        const starttijdEl = document.getElementById("starttijd");
+        const eindtijdEl = document.getElementById("eindtijd");
+
+        if (!truckEl.value) {
+            fouten.push("Selecteer een truck.");
+            truckEl.style.borderColor = "var(--rood)";
+        } else {
+            truckEl.style.borderColor = "";
+        }
+
+        if (!opleggerEl.value) {
+            fouten.push("Selecteer een oplegger.");
+            opleggerEl.style.borderColor = "var(--rood)";
+        } else {
+            opleggerEl.style.borderColor = "";
+        }
+
+        if (!starttijdEl.value) {
+            fouten.push("Vul een starttijd in.");
+            starttijdEl.style.borderColor = "var(--rood)";
+        } else {
+            starttijdEl.style.borderColor = "";
+        }
+
+        if (!eindtijdEl.value) {
+            fouten.push("Vul een eindtijd in.");
+            eindtijdEl.style.borderColor = "var(--rood)";
+        } else {
+            eindtijdEl.style.borderColor = "";
+        }
+
+        if (starttijdEl.value && eindtijdEl.value && eindtijdEl.value <= starttijdEl.value) {
+            fouten.push("Eindtijd moet na de starttijd zijn.");
+            eindtijdEl.style.borderColor = "var(--rood)";
+        }
+
+        const filiaalSelects = document.querySelectorAll("[name='filiaal[]']");
+        const heeftFiliaal = Array.from(filiaalSelects).some(s => s.value !== "");
+        if (!heeftFiliaal) {
+            fouten.push("Selecteer minimaal één filiaal.");
+            filiaalSelects.forEach(s => s.style.borderColor = "var(--rood)");
+        }
+
+        if (fouten.length > 0) {
+            e.preventDefault();
+            alert(fouten.join("\n"));
+        }
+    });
 </script>
 </body>
 </html>

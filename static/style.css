@@ -366,8 +366,11 @@ input:focus, select:focus, textarea:focus {
 textarea { resize: vertical; min-height: 80px; }
 
 input[type="time"] {
-    -webkit-appearance: textfield;
+    -webkit-appearance: none;
+    appearance: none;
     min-height: 48px;
+    color: var(--tekst);
+    background: var(--wit);
 }
 
 input[type="date"] {

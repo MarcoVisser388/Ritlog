@@ -22,6 +22,10 @@ app.secret_key = "ritlog-geheim-2026-xK9mP"
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+@app.template_filter('basename')
+def basename_filter(path):
+    return os.path.basename(path)
+
 # ── Validatie functies ──────────────────────────────────────────
 
 def valideer_opleggernummer(nummer):
@@ -768,6 +772,79 @@ def rit_bewerken_opslaan(rit_id):
     conn.close()
     flash("Rit bijgewerkt.", "succes")
     return redirect(url_for("overzicht"))
+
+@app.route("/api/ritten")
+def api_ritten():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.pauze_minuten,
+               ritten.kilometers, ritten.opmerkingen
+        FROM ritten
+        LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+        LEFT JOIN trucks ON ritten.truck_id = trucks.id
+        LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
+        WHERE ritten.is_demo = 0
+        ORDER BY ritten.datum DESC
+    """)
+    ritten = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "chauffeur": r[1], "truck": r[2], "oplegger": r[3],
+                     "datum": r[4], "starttijd": r[5], "eindtijd": r[6],
+                     "pauze_minuten": r[7], "kilometers": r[8], "opmerkingen": r[9]} for r in ritten])
+
+@app.route("/api/filialen")
+def api_filialen():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, filiaalnummer, straat, huisnummer, postcode, plaats FROM filialen ORDER BY filiaalnummer")
+    filialen = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "filiaalnummer": r[1], "straat": r[2],
+                     "huisnummer": r[3], "postcode": r[4], "plaats": r[5]} for r in filialen])
+
+@app.route("/api/chauffeurs")
+def api_chauffeurs():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, werknemersnummer, naam FROM chauffeurs ORDER BY naam")
+    chauffeurs = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "werknemersnummer": r[1], "naam": r[2]} for r in chauffeurs])
+
+@app.route("/api/trucks")
+def api_trucks():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, kenteken FROM trucks ORDER BY kenteken")
+    trucks = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "kenteken": r[1]} for r in trucks])
+
+@app.route("/api/opleggers")
+def api_opleggers():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, opleggernummer FROM opleggers ORDER BY opleggernummer")
+    opleggers = cursor.fetchall()
+    conn.close()
+    return jsonify([{"id": r[0], "opleggernummer": r[1]} for r in opleggers])
+
+@app.route("/api/rit-filialen")
+def api_rit_filialen():
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT rf.rit_id, rf.filiaalnummer, rf.volgorde
+        FROM rit_filialen rf
+        JOIN ritten r ON rf.rit_id = r.id
+        WHERE r.is_demo = 0
+        ORDER BY rf.rit_id, rf.volgorde
+    """)
+    rit_filialen = cursor.fetchall()
+    conn.close()
+    return jsonify([{"rit_id": r[0], "filiaalnummer": r[1], "volgorde": r[2]} for r in rit_filialen])
 
 if __name__ == "__main__":
     init_db()
