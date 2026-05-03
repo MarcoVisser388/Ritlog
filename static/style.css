@@ -257,6 +257,9 @@ body {
 }
 .rit-row svg { width: 15px; height: 15px; fill: var(--tekst-zacht); flex-shrink: 0; }
 
+.badge-oranje { background: #FFF3E0; color: #E65100; }
+.badge-blauw  { background: #E3F2FD; color: #0D47A1; }
+
 /* ── Filialen ── */
 .filialen { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .filiaal-tag {
@@ -276,9 +279,10 @@ body {
     font-size: 11px;
     font-weight: 600;
 }
-.badge-groen { background: var(--groen-licht); color: var(--groen); }
-.badge-oranje { background: var(--oranje-licht); color: #C05010; }
-.badge-rood { background: var(--rood-licht); color: var(--rood); }
+.badge-groen  { background: #E8F5E9; color: #2E7D32; }
+.badge-oranje { background: #FFF3E0; color: #E65100; }
+.badge-rood   { background: #FFEBEE; color: #C62828; }
+.badge-blauw  { background: #E3F2FD; color: #0D47A1; }
 
 /* ── Cards ── */
 .card {

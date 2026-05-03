@@ -70,14 +70,18 @@
         <div class="rit-card">
             <div class="rit-top">
                 <span class="rit-datum">{{ r[4] }}</span>
-                <div style="display:flex;gap:6px;align-items:center;">
-                    {% if r[11] %}
-                    <span class="badge badge-rood">Schade</span>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                    {% if r[11] == 1 %}
+                        {% if r[12] == 'aangebracht' %}
+                        <span class="badge badge-rood" style="cursor:pointer" onclick="toggleSchade({{ r[0] }}, this)">Aangebrachte schade ▾</span>
+                        {% else %}
+                        <span class="badge badge-oranje" style="cursor:pointer" onclick="toggleSchade({{ r[0] }}, this)">Bestaande schade ▾</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="badge badge-groen">Geen schade</span>
                     {% endif %}
                     {% if r[8] and r[8] != '0' and r[8] != 0 %}
-                    <span class="badge badge-oranje">{{ r[8] }} min pauze</span>
-                    {% else %}
-                    <span class="badge badge-groen">Voltooid</span>
+                    <span class="badge badge-blauw">{{ r[8] }} min pauze</span>
                     {% endif %}
                 </div>
             </div>
@@ -103,6 +107,7 @@
             {% if r[7] %}
             <div style="margin-top:8px;font-size:12px;color:var(--tekst-zacht)">{{ r[7] }}</div>
             {% endif %}
+            <div class="schade-uitklap" id="schade-{{ r[0] }}" style="display:none;"></div>
             <div class="rit-knoppen">
                 <a href="/rit-detail/{{ r[0] }}" class="rit-knop rit-knop-blauw">Details</a>
                 <a href="/rit-bewerken/{{ r[0] }}" class="rit-knop rit-knop-lichtblauw">Bewerken</a>
@@ -154,32 +159,26 @@ const maanden = ['Januari','Februari','Maart','April','Mei','Juni','Juli','Augus
 let huidigePeriode = 'maand';
 let huidigeDatum = new Date();
 
-function formatDatum(d) {
-    return d.toISOString().split('T')[0];
-}
+function formatDatum(d) { return d.toISOString().split('T')[0]; }
 
 function getVanTot() {
     const d = new Date(huidigeDatum);
     let van, tot, label;
     if (huidigePeriode === 'dag') {
-        van = formatDatum(d);
-        tot = van;
+        van = formatDatum(d); tot = van;
         label = d.getDate() + ' ' + maanden[d.getMonth()] + ' ' + d.getFullYear();
     } else if (huidigePeriode === 'week') {
         const dag = d.getDay() === 0 ? 6 : d.getDay() - 1;
         const ma = new Date(d); ma.setDate(d.getDate() - dag);
         const zo = new Date(ma); zo.setDate(ma.getDate() + 6);
-        van = formatDatum(ma);
-        tot = formatDatum(zo);
-        const weekNr = getWeekNr(ma);
-        label = 'Week ' + weekNr + ' — ' + ma.getFullYear();
+        van = formatDatum(ma); tot = formatDatum(zo);
+        label = 'Week ' + getWeekNr(ma) + ' — ' + ma.getFullYear();
     } else if (huidigePeriode === 'maand') {
         van = formatDatum(new Date(d.getFullYear(), d.getMonth(), 1));
         tot = formatDatum(new Date(d.getFullYear(), d.getMonth() + 1, 0));
         label = maanden[d.getMonth()] + ' ' + d.getFullYear();
     } else {
-        van = d.getFullYear() + '-01-01';
-        tot = d.getFullYear() + '-12-31';
+        van = d.getFullYear() + '-01-01'; tot = d.getFullYear() + '-12-31';
         label = d.getFullYear().toString();
     }
     return { van, tot, label };
@@ -187,8 +186,7 @@ function getVanTot() {
 
 function getWeekNr(d) {
     const start = new Date(d.getFullYear(), 0, 1);
-    const diff = d - start;
-    return Math.ceil((diff / 86400000 + start.getDay() + 1) / 7);
+    return Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7);
 }
 
 function updateLabel() {
@@ -197,6 +195,12 @@ function updateLabel() {
     const labels = { dag: 'Ritten op ', week: 'Ritten in ', maand: 'Ritten in ', jaar: 'Ritten in ' };
     document.getElementById('ritten-label').textContent = labels[huidigePeriode] + label;
     document.getElementById('periode-label').textContent = label;
+}
+
+function schadeBadgeHTML(r) {
+    if (!r.heeft_schade) return '<span class="badge badge-groen">Geen schade</span>';
+    if (r.schade_type === 'aangebracht') return `<span class="badge badge-rood" style="cursor:pointer" onclick="toggleSchade(${r.id}, this)">Aangebrachte schade ▾</span>`;
+    return `<span class="badge badge-oranje" style="cursor:pointer" onclick="toggleSchade(${r.id}, this)">Bestaande schade ▾</span>`;
 }
 
 function laadData() {
@@ -224,9 +228,9 @@ function laadData() {
                 <div class="rit-card">
                     <div class="rit-top">
                         <span class="rit-datum">${r.datum}</span>
-                        <div style="display:flex;gap:6px;align-items:center;">
-                            ${r.heeft_schade ? '<span class="badge badge-rood">Schade</span>' : ''}
-                            ${r.pauze_minuten ? `<span class="badge badge-oranje">${r.pauze_minuten} min pauze</span>` : '<span class="badge badge-groen">Voltooid</span>'}
+                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                            ${schadeBadgeHTML(r)}
+                            ${r.pauze_minuten ? `<span class="badge badge-blauw">${r.pauze_minuten} min pauze</span>` : ''}
                         </div>
                     </div>
                     <div class="rit-row">
@@ -243,12 +247,51 @@ function laadData() {
                     </div>
                     ${r.filialen.length ? `<div class="filialen">${r.filialen.map(f => `<span class="filiaal-tag">${f}</span>`).join('')}</div>` : ''}
                     ${r.opmerkingen ? `<div style="margin-top:8px;font-size:12px;color:var(--tekst-zacht)">${r.opmerkingen}</div>` : ''}
+                    <div class="schade-uitklap" id="schade-${r.id}" style="display:none;"></div>
                     <div class="rit-knoppen">
                         <a href="/rit-detail/${r.id}" class="rit-knop rit-knop-blauw">Details</a>
                         <a href="/rit-bewerken/${r.id}" class="rit-knop rit-knop-lichtblauw">Bewerken</a>
                         ${r.is_admin ? `<form method="POST" action="/rit-verwijderen/${r.id}" style="flex:1;" onsubmit="return confirm('Weet je zeker dat je deze rit wilt verwijderen?')"><button type="submit" class="rit-knop rit-knop-rood">Verwijderen</button></form>` : ''}
                     </div>
                 </div>`).join('');
+        });
+}
+
+function toggleSchade(ritId, badge) {
+    const container = document.getElementById('schade-' + ritId);
+    if (container.style.display !== 'none') {
+        container.style.display = 'none';
+        badge.textContent = badge.textContent.replace('▴', '▾');
+        return;
+    }
+    if (container.innerHTML.trim() !== '') {
+        container.style.display = 'block';
+        badge.textContent = badge.textContent.replace('▾', '▴');
+        return;
+    }
+    fetch('/schades/' + ritId)
+        .then(r => r.json())
+        .then(data => {
+            if (data.schades.length === 0) {
+                container.innerHTML = '<div style="padding:10px 0;font-size:13px;color:var(--tekst-zacht)">Geen foto\'s beschikbaar.</div>';
+            } else {
+                container.innerHTML = `
+                    <div style="border-top:1px solid var(--grijs-mid);margin-top:10px;padding-top:10px;">
+                        <div style="font-size:12px;font-weight:600;color:var(--tekst);margin-bottom:8px;">Schadefotos</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            ${data.schades.map(s => `
+                                <div>
+                                    ${s.foto_pad ? `<img src="/uploads/${s.bestandsnaam}" style="width:100%;border-radius:8px;object-fit:cover;max-height:120px;">` : ''}
+                                    <div style="font-size:11px;margin-top:4px;font-weight:500;${s.type === 'aangebracht' ? 'color:#A32D2D' : 'color:#E65100'}">
+                                        ${s.type === 'bestaand' ? 'Bestaande schade' : 'Aangebrachte schade'}
+                                    </div>
+                                    ${s.omschrijving ? `<div style="font-size:12px;color:var(--tekst);margin-top:2px;">${s.omschrijving}</div>` : ''}
+                                </div>`).join('')}
+                        </div>
+                    </div>`;
+            }
+            container.style.display = 'block';
+            badge.textContent = badge.textContent.replace('▾', '▴');
         });
 }
 
@@ -263,15 +306,10 @@ function setPeriode(periode, btn) {
 
 function navigeer(richting) {
     const d = huidigeDatum;
-    if (huidigePeriode === 'dag') {
-        d.setDate(d.getDate() + richting);
-    } else if (huidigePeriode === 'week') {
-        d.setDate(d.getDate() + (richting * 7));
-    } else if (huidigePeriode === 'maand') {
-        d.setMonth(d.getMonth() + richting);
-    } else {
-        d.setFullYear(d.getFullYear() + richting);
-    }
+    if (huidigePeriode === 'dag') d.setDate(d.getDate() + richting);
+    else if (huidigePeriode === 'week') d.setDate(d.getDate() + (richting * 7));
+    else if (huidigePeriode === 'maand') d.setMonth(d.getMonth() + richting);
+    else d.setFullYear(d.getFullYear() + richting);
     huidigeDatum = new Date(d);
     updateLabel();
     laadData();
