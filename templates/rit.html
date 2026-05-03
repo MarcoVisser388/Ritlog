@@ -126,6 +126,13 @@
                 <div id="schades">
                     <div class="schade-blok">
                         <div class="form-group">
+                            <label>Type schade</label>
+                            <select name="schadetype[]">
+                                <option value="aangebracht">Aangebrachte schade</option>
+                                <option value="bestaand">Bestaande schade</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label>Foto uploaden</label>
                             <input type="file" name="schadefoto[]" accept="image/*" multiple>
                         </div>
@@ -194,6 +201,13 @@
         blok.className = "schade-blok";
         blok.innerHTML = `
             <div class="form-group">
+                <label>Type schade</label>
+                <select name="schadetype[]">
+                    <option value="aangebracht">Aangebrachte schade</option>
+                    <option value="bestaand">Bestaande schade</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label>Foto uploaden</label>
                 <input type="file" name="schadefoto[]" accept="image/*" multiple>
             </div>
@@ -206,56 +220,27 @@
 
     document.getElementById("rit-form").addEventListener("submit", function(e) {
         let fouten = [];
-
         const truckEl = document.getElementById("truck_id");
         const opleggerEl = document.getElementById("oplegger_id");
         const starttijdEl = document.getElementById("starttijd");
         const eindtijdEl = document.getElementById("eindtijd");
 
-        if (!truckEl.value) {
-            fouten.push("Selecteer een truck.");
-            truckEl.style.borderColor = "var(--rood)";
-        } else {
-            truckEl.style.borderColor = "";
-        }
-
-        if (!opleggerEl.value) {
-            fouten.push("Selecteer een oplegger.");
-            opleggerEl.style.borderColor = "var(--rood)";
-        } else {
-            opleggerEl.style.borderColor = "";
-        }
-
-        if (!starttijdEl.value) {
-            fouten.push("Vul een starttijd in.");
-            starttijdEl.style.borderColor = "var(--rood)";
-        } else {
-            starttijdEl.style.borderColor = "";
-        }
-
-        if (!eindtijdEl.value) {
-            fouten.push("Vul een eindtijd in.");
-            eindtijdEl.style.borderColor = "var(--rood)";
-        } else {
-            eindtijdEl.style.borderColor = "";
-        }
-
+        if (!truckEl.value) { fouten.push("Selecteer een truck."); truckEl.style.borderColor = "var(--rood)"; }
+        else truckEl.style.borderColor = "";
+        if (!opleggerEl.value) { fouten.push("Selecteer een oplegger."); opleggerEl.style.borderColor = "var(--rood)"; }
+        else opleggerEl.style.borderColor = "";
+        if (!starttijdEl.value) { fouten.push("Vul een starttijd in."); starttijdEl.style.borderColor = "var(--rood)"; }
+        else starttijdEl.style.borderColor = "";
+        if (!eindtijdEl.value) { fouten.push("Vul een eindtijd in."); eindtijdEl.style.borderColor = "var(--rood)"; }
+        else eindtijdEl.style.borderColor = "";
         if (starttijdEl.value && eindtijdEl.value && eindtijdEl.value <= starttijdEl.value) {
             fouten.push("Eindtijd moet na de starttijd zijn.");
             eindtijdEl.style.borderColor = "var(--rood)";
         }
-
         const filiaalSelects = document.querySelectorAll("[name='filiaal[]']");
         const heeftFiliaal = Array.from(filiaalSelects).some(s => s.value !== "");
-        if (!heeftFiliaal) {
-            fouten.push("Selecteer minimaal één filiaal.");
-            filiaalSelects.forEach(s => s.style.borderColor = "var(--rood)");
-        }
-
-        if (fouten.length > 0) {
-            e.preventDefault();
-            alert(fouten.join("\n"));
-        }
+        if (!heeftFiliaal) { fouten.push("Selecteer minimaal één filiaal."); filiaalSelects.forEach(s => s.style.borderColor = "var(--rood)"); }
+        if (fouten.length > 0) { e.preventDefault(); alert(fouten.join("\n")); }
     });
 </script>
 </body>

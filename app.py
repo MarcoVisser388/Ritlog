@@ -103,22 +103,15 @@ def bereken_kilometers(filiaalnummers):
     waypoints = "|".join(adressen)
     url = "https://maps.googleapis.com/maps/api/directions/json"
     params = {
-        "origin": DC_ADRES,
-        "destination": DC_ADRES,
+        "origin": DC_ADRES, "destination": DC_ADRES,
         "waypoints": f"optimize:true|{waypoints}",
-        "key": GOOGLE_API_KEY,
-        "language": "nl",
-        "region": "nl"
+        "key": GOOGLE_API_KEY, "language": "nl", "region": "nl"
     }
     try:
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
         if data.get("status") == "OK":
-            totaal_meters = sum(
-                leg["distance"]["value"]
-                for route in data["routes"]
-                for leg in route["legs"]
-            )
+            totaal_meters = sum(leg["distance"]["value"] for route in data["routes"] for leg in route["legs"])
             return round(totaal_meters / 1000, 1)
         return 0
     except Exception as e:
@@ -173,6 +166,7 @@ def init_db():
         rit_id INTEGER,
         foto_pad TEXT,
         omschrijving TEXT,
+        type TEXT DEFAULT 'aangebracht',
         FOREIGN KEY (rit_id) REFERENCES ritten(id))""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS filialen (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,12 +175,13 @@ def init_db():
         huisnummer TEXT,
         postcode TEXT,
         plaats TEXT)""")
+    for kolom in ["is_demo INTEGER DEFAULT 0", "kilometers REAL DEFAULT 0"]:
+        try:
+            cursor.execute(f"ALTER TABLE ritten ADD COLUMN {kolom}")
+        except:
+            pass
     try:
-        cursor.execute("ALTER TABLE ritten ADD COLUMN is_demo INTEGER DEFAULT 0")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE ritten ADD COLUMN kilometers REAL DEFAULT 0")
+        cursor.execute("ALTER TABLE schades ADD COLUMN type TEXT DEFAULT 'aangebracht'")
     except:
         pass
     conn.commit()
@@ -201,14 +196,6 @@ def koppel_jevkovski():
         cursor.execute("UPDATE gebruikers SET chauffeur_id = ? WHERE gebruikersnaam = 'jevkovski'", (chauffeur[0],))
         conn.commit()
     conn.close()
-
-def get_van_tot():
-    vandaag = datetime.date.today()
-    van = request.args.get("van", vandaag.replace(day=1).isoformat())
-    tot = request.args.get("tot", vandaag.replace(
-        day=1, month=vandaag.month % 12 + 1
-    ).isoformat() if vandaag.month < 12 else f"{vandaag.year}-12-31")
-    return van, tot
 
 # ── Routes ──────────────────────────────────────────
 
@@ -256,15 +243,13 @@ def overzicht():
     vandaag = datetime.date.today()
     van = vandaag.replace(day=1).isoformat()
     tot = vandaag.isoformat()
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-
     if is_admin:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
-               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type)
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -276,7 +261,7 @@ def overzicht():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
-               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type)
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -288,7 +273,7 @@ def overzicht():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
-               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type)
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -296,13 +281,11 @@ def overzicht():
             LEFT JOIN schades ON schades.rit_id = ritten.id
             WHERE ritten.chauffeur_id = ? AND ritten.is_demo = 0 AND ritten.datum >= ? AND ritten.datum <= ?
             GROUP BY ritten.id ORDER BY ritten.datum DESC""", (chauffeur_id, van, tot))
-
     ritten = cursor.fetchall()
     filialen_per_rit = {}
     for rit in ritten:
         cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (rit[0],))
         filialen_per_rit[rit[0]] = [f[0] for f in cursor.fetchall()]
-
     if is_demo:
         cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
     elif is_admin:
@@ -310,7 +293,6 @@ def overzicht():
     else:
         cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     stats_ritten = cursor.fetchone()[0]
-
     if is_demo:
         cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.is_demo = 1", (van, tot))
     elif is_admin:
@@ -318,7 +300,6 @@ def overzicht():
     else:
         cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, tot, chauffeur_id))
     stats_filialen = cursor.fetchone()[0]
-
     if is_demo:
         cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
     elif is_admin:
@@ -327,7 +308,6 @@ def overzicht():
         cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     minuten = cursor.fetchone()[0]
     stats_uren = round(minuten / 60, 1)
-
     if is_demo:
         cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
     elif is_admin:
@@ -335,7 +315,6 @@ def overzicht():
     else:
         cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     stats_kilometers = round(cursor.fetchone()[0], 1)
-
     stats = {"ritten": stats_ritten, "filialen": stats_filialen, "uren": stats_uren, "kilometers": stats_kilometers}
     conn.close()
     return render_template("overzicht.html", ritten=ritten, filialen_per_rit=filialen_per_rit, stats=stats)
@@ -349,10 +328,8 @@ def stats():
     vandaag = datetime.date.today()
     van = request.args.get("van", vandaag.replace(day=1).isoformat())
     tot = request.args.get("tot", vandaag.isoformat())
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-
     if is_demo:
         cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
     elif is_admin:
@@ -360,7 +337,6 @@ def stats():
     else:
         cursor.execute("SELECT COUNT(*) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     ritten = cursor.fetchone()[0]
-
     if is_demo:
         cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.is_demo = 1", (van, tot))
     elif is_admin:
@@ -368,7 +344,6 @@ def stats():
     else:
         cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, tot, chauffeur_id))
     filialen = cursor.fetchone()[0]
-
     if is_demo:
         cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
     elif is_admin:
@@ -377,7 +352,6 @@ def stats():
         cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     minuten = cursor.fetchone()[0]
     uren = round(minuten / 60, 1)
-
     if is_demo:
         cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND is_demo = 1", (van, tot))
     elif is_admin:
@@ -385,7 +359,6 @@ def stats():
     else:
         cursor.execute("SELECT COALESCE(SUM(kilometers), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     kilometers = round(cursor.fetchone()[0], 1)
-
     conn.close()
     return jsonify(ritten=ritten, filialen=filialen, uren=uren, kilometers=kilometers)
 
@@ -398,16 +371,13 @@ def overzicht_data():
     vandaag = datetime.date.today()
     van = request.args.get("van", vandaag.replace(day=1).isoformat())
     tot = request.args.get("tot", vandaag.isoformat())
-
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-
     if is_admin:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
-            FROM ritten
-            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
             WHERE ritten.datum >= ? AND ritten.datum <= ?
@@ -416,8 +386,7 @@ def overzicht_data():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
-            FROM ritten
-            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
             WHERE ritten.is_demo = 1 AND ritten.datum >= ? AND ritten.datum <= ?
@@ -426,28 +395,42 @@ def overzicht_data():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
-            FROM ritten
-            LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+            FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
             WHERE ritten.chauffeur_id = ? AND ritten.is_demo = 0 AND ritten.datum >= ? AND ritten.datum <= ?
             ORDER BY ritten.datum DESC""", (chauffeur_id, van, tot))
-
     ritten = cursor.fetchall()
     resultaat = []
     for r in ritten:
         cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (r[0],))
         filialen = [f[0] for f in cursor.fetchall()]
-        cursor.execute("SELECT COUNT(*) FROM schades WHERE rit_id = ?", (r[0],))
-        heeft_schade = cursor.fetchone()[0] > 0
+        cursor.execute("SELECT COUNT(*), MAX(type) FROM schades WHERE rit_id = ?", (r[0],))
+        schade_row = cursor.fetchone()
+        heeft_schade = schade_row[0] > 0
+        schade_type = schade_row[1] or 'aangebracht'
         resultaat.append({
             "id": r[0], "chauffeur": r[1], "truck": r[2], "oplegger": r[3],
             "datum": r[4], "starttijd": r[5], "eindtijd": r[6],
             "opmerkingen": r[7], "pauze_minuten": r[8], "kilometers": r[10],
-            "filialen": filialen, "heeft_schade": heeft_schade, "is_admin": is_admin
+            "filialen": filialen, "heeft_schade": heeft_schade,
+            "schade_type": schade_type, "is_admin": is_admin
         })
     conn.close()
     return jsonify({"ritten": resultaat})
+
+@app.route("/schades/<int:rit_id>")
+@login_vereist
+def schades_json(rit_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT foto_pad, omschrijving, type FROM schades WHERE rit_id = ?", (rit_id,))
+    schades = cursor.fetchall()
+    conn.close()
+    return jsonify({"schades": [
+        {"foto_pad": s[0], "bestandsnaam": os.path.basename(s[0]) if s[0] else "", "omschrijving": s[1], "type": s[2] or "aangebracht"}
+        for s in schades
+    ]})
 
 @app.route("/beheer")
 @admin_vereist
@@ -478,8 +461,7 @@ def chauffeur_toevoegen():
     if not valideer_naam(naam):
         fouten.append("Naam is ongeldig. Gebruik alleen letters.")
     if fouten:
-        for fout in fouten:
-            flash(fout, "fout")
+        for fout in fouten: flash(fout, "fout")
         return redirect(url_for("beheer"))
     naam = naam.title()
     conn = sqlite3.connect("ritten.db")
@@ -542,8 +524,7 @@ def filiaal_toevoegen():
     if postcode and not valideer_postcode(postcode):
         fouten.append("Postcode is ongeldig. Gebruik formaat: 1234 AB.")
     if fouten:
-        for fout in fouten:
-            flash(fout, "fout")
+        for fout in fouten: flash(fout, "fout")
         return redirect(url_for("beheer"))
     straat = formatteer_straat(straat) if straat else ""
     plaats = formatteer_plaats(plaats) if plaats else ""
@@ -656,6 +637,7 @@ def rit_opslaan():
         cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)", (rit_id, filiaalnummer, volgorde + 1))
     schadefotos = request.files.getlist("schadefoto[]")
     schadeomschrijvingen = request.form.getlist("schadeomschrijving[]")
+    schadetypen = request.form.getlist("schadetype[]")
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     for index, foto in enumerate(schadefotos):
         if foto and foto.filename:
@@ -663,7 +645,8 @@ def rit_opslaan():
             opslag_pad = os.path.join(app.config["UPLOAD_FOLDER"], veilige_bestandsnaam)
             foto.save(opslag_pad)
             omschrijving = schadeomschrijvingen[index] if index < len(schadeomschrijvingen) else ""
-            cursor.execute("INSERT INTO schades (rit_id, foto_pad, omschrijving) VALUES (?, ?, ?)", (rit_id, opslag_pad, omschrijving))
+            schadetype = schadetypen[index] if index < len(schadetypen) else "aangebracht"
+            cursor.execute("INSERT INTO schades (rit_id, foto_pad, omschrijving, type) VALUES (?, ?, ?, ?)", (rit_id, opslag_pad, omschrijving, schadetype))
     conn.commit()
     conn.close()
     return redirect(url_for("overzicht"))
@@ -706,9 +689,9 @@ def rit_detail(rit_id):
         WHERE rf.rit_id = ? ORDER BY rf.volgorde""", (rit_id,))
     filialen_rows = cursor.fetchall()
     filialen = [{"filiaalnummer": r[0], "straat": r[1], "huisnummer": r[2], "postcode": r[3], "plaats": r[4]} for r in filialen_rows]
-    cursor.execute("SELECT foto_pad, omschrijving FROM schades WHERE rit_id = ?", (rit_id,))
+    cursor.execute("SELECT foto_pad, omschrijving, type FROM schades WHERE rit_id = ?", (rit_id,))
     schades_rows = cursor.fetchall()
-    schades = [{"foto_pad": r[0], "omschrijving": r[1]} for r in schades_rows]
+    schades = [{"foto_pad": r[0], "omschrijving": r[1], "type": r[2] or "aangebracht"} for r in schades_rows]
     gewerkte_uren = None
     if rit[5] and rit[6]:
         start = rit[5].split(":")
@@ -760,6 +743,9 @@ def rit_bewerken(rit_id):
         return redirect(url_for("overzicht"))
     cursor.execute("SELECT filiaalnummer FROM rit_filialen WHERE rit_id = ? ORDER BY volgorde", (rit_id,))
     huidige_filialen = [f[0] for f in cursor.fetchall()]
+    cursor.execute("SELECT id, foto_pad, omschrijving, type FROM schades WHERE rit_id = ?", (rit_id,))
+    schades_rows = cursor.fetchall()
+    huidige_schades = [{"id": r[0], "foto_pad": r[1], "omschrijving": r[2], "type": r[3] or "aangebracht"} for r in schades_rows]
     cursor.execute("SELECT * FROM chauffeurs ORDER BY naam")
     chauffeurs = cursor.fetchall()
     cursor.execute("SELECT * FROM trucks ORDER BY kenteken")
@@ -770,6 +756,7 @@ def rit_bewerken(rit_id):
     filialen = cursor.fetchall()
     conn.close()
     return render_template("rit_bewerken.html", rit=rit, huidige_filialen=huidige_filialen,
+                           huidige_schades=huidige_schades,
                            chauffeurs=chauffeurs, trucks=trucks, opleggers=opleggers, filialen=filialen)
 
 @app.route("/rit-bewerken-opslaan/<int:rit_id>", methods=["POST"])
@@ -810,6 +797,31 @@ def rit_bewerken_opslaan(rit_id):
     for volgorde, filiaalnummer in enumerate(filialen_gefilterd):
         cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)",
                        (rit_id, filiaalnummer, volgorde + 1))
+    bestaande_ids = request.form.getlist("bestaande_schadeid[]")
+    bestaande_typen = request.form.getlist("bestaande_schadetype[]")
+    bestaande_omschrijvingen = request.form.getlist("bestaande_schadeomschrijving[]")
+    te_verwijderen = request.form.getlist("schade_verwijderen[]")
+    for i, schade_id in enumerate(bestaande_ids):
+        if schade_id in te_verwijderen:
+            cursor.execute("DELETE FROM schades WHERE id = ?", (schade_id,))
+        else:
+            schadetype = bestaande_typen[i] if i < len(bestaande_typen) else "aangebracht"
+            omschrijving = bestaande_omschrijvingen[i] if i < len(bestaande_omschrijvingen) else ""
+            cursor.execute("UPDATE schades SET type = ?, omschrijving = ? WHERE id = ?",
+                           (schadetype, omschrijving, schade_id))
+    schadefotos = request.files.getlist("schadefoto[]")
+    schadeomschrijvingen = request.form.getlist("schadeomschrijving[]")
+    schadetypen = request.form.getlist("schadetype[]")
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    for index, foto in enumerate(schadefotos):
+        if foto and foto.filename:
+            veilige_bestandsnaam = secure_filename(foto.filename)
+            opslag_pad = os.path.join(app.config["UPLOAD_FOLDER"], veilige_bestandsnaam)
+            foto.save(opslag_pad)
+            omschrijving = schadeomschrijvingen[index] if index < len(schadeomschrijvingen) else ""
+            schadetype = schadetypen[index] if index < len(schadetypen) else "aangebracht"
+            cursor.execute("INSERT INTO schades (rit_id, foto_pad, omschrijving, type) VALUES (?, ?, ?, ?)",
+                           (rit_id, opslag_pad, omschrijving, schadetype))
     conn.commit()
     conn.close()
     flash("Rit bijgewerkt.", "succes")
@@ -822,8 +834,7 @@ def api_ritten():
     cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.pauze_minuten,
                ritten.kilometers, ritten.opmerkingen
-        FROM ritten
-        LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
+        FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
         LEFT JOIN trucks ON ritten.truck_id = trucks.id
         LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
         WHERE ritten.is_demo = 0 ORDER BY ritten.datum DESC""")
@@ -880,6 +891,145 @@ def api_rit_filialen():
     rit_filialen = cursor.fetchall()
     conn.close()
     return jsonify([{"rit_id": r[0], "filiaalnummer": r[1], "volgorde": r[2]} for r in rit_filialen])
+
+@app.route("/schade-rapport/<int:rit_id>")
+@login_vereist
+def schade_rapport(rit_id):
+    import base64
+    from weasyprint import HTML as WeasyHTML
+
+    is_admin = session.get("rol") == "admin"
+    is_demo = session.get("rol") == "demo"
+    chauffeur_id = session.get("chauffeur_id")
+
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("""SELECT ritten.id, ritten.chauffeur_id, ritten.truck_id, ritten.oplegger_id,
+               ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers FROM ritten WHERE id = ?""", (rit_id,))
+    rit = cursor.fetchone()
+
+    if not rit:
+        conn.close()
+        return "Rit niet gevonden", 404
+    if is_demo and rit[9] != 1:
+        conn.close()
+        return "Geen toegang", 403
+    if not is_admin and not is_demo and rit[1] != chauffeur_id:
+        conn.close()
+        return "Geen toegang", 403
+
+    cursor.execute("SELECT naam FROM chauffeurs WHERE id = ?", (rit[1],))
+    chauffeur = cursor.fetchone()
+    chauffeur_naam = chauffeur[0] if chauffeur else "Onbekend"
+    cursor.execute("SELECT kenteken FROM trucks WHERE id = ?", (rit[2],))
+    truck = cursor.fetchone()
+    truck_kenteken = truck[0] if truck else "Onbekend"
+    cursor.execute("SELECT opleggernummer FROM opleggers WHERE id = ?", (rit[3],))
+    oplegger = cursor.fetchone()
+    oplegger_nummer = oplegger[0] if oplegger else "Onbekend"
+    cursor.execute("""SELECT rf.filiaalnummer, f.straat, f.huisnummer, f.postcode, f.plaats
+        FROM rit_filialen rf LEFT JOIN filialen f ON rf.filiaalnummer = f.filiaalnummer
+        WHERE rf.rit_id = ? ORDER BY rf.volgorde""", (rit_id,))
+    filialen = [{"filiaalnummer": r[0], "straat": r[1], "huisnummer": r[2], "postcode": r[3], "plaats": r[4]} for r in cursor.fetchall()]
+    cursor.execute("SELECT foto_pad, omschrijving, type FROM schades WHERE rit_id = ?", (rit_id,))
+    schades_rows = cursor.fetchall()
+    conn.close()
+
+    schades = []
+    for s in schades_rows:
+        foto_b64 = None
+        if s[0] and os.path.exists(s[0]):
+            with open(s[0], "rb") as f:
+                ext = os.path.splitext(s[0])[1].lower().replace(".", "")
+                if ext == "jpg":
+                    ext = "jpeg"
+                foto_b64 = f"data:image/{ext};base64," + base64.b64encode(f.read()).decode()
+        schades.append({"foto_b64": foto_b64, "omschrijving": s[1], "type": s[2] or "aangebracht"})
+
+    filialen_str = " · ".join([f["filiaalnummer"] for f in filialen]) if filialen else "—"
+    vandaag = datetime.date.today().strftime("%d-%m-%Y")
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="UTF-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 0; padding: 0; color: #111; }}
+        .header {{ background: #0F2A52; padding: 24px; display: flex; justify-content: space-between; align-items: flex-start; }}
+        .header-left h1 {{ color: white; font-size: 20px; margin: 0 0 4px 0; }}
+        .header-left p {{ color: rgba(255,255,255,0.6); font-size: 12px; margin: 0; }}
+        .header-right {{ background: rgba(255,255,255,0.15); border-radius: 8px; padding: 8px 12px; text-align: right; }}
+        .header-right .label {{ color: rgba(255,255,255,0.6); font-size: 10px; }}
+        .header-right .value {{ color: white; font-size: 13px; font-weight: bold; }}
+        .section {{ padding: 20px 24px; border-bottom: 1px solid #eee; }}
+        .section-title {{ font-size: 10px; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }}
+        .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+        .field label {{ font-size: 10px; color: #888; display: block; margin-bottom: 2px; }}
+        .field span {{ font-size: 13px; font-weight: bold; color: #111; }}
+        .badge {{ display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; margin-bottom: 8px; }}
+        .badge-rood {{ background: #FFEBEE; color: #C62828; }}
+        .badge-oranje {{ background: #FFF3E0; color: #E65100; }}
+        .schade {{ padding: 16px 0; border-bottom: 1px solid #eee; }}
+        .schade:last-child {{ border-bottom: none; }}
+        .schade img {{ width: 100%; border-radius: 8px; margin: 8px 0; max-height: 200px; object-fit: cover; }}
+        .schade-omschr {{ font-size: 13px; color: #333; margin-top: 4px; }}
+        .footer {{ padding: 14px 24px; background: #f9f9f9; text-align: center; font-size: 11px; color: #999; }}
+    </style>
+    </head>
+    <body>
+    <div class="header">
+        <div class="header-left">
+            <h1>Schade rapport</h1>
+            <p>RitLog — Automatisch gegenereerd</p>
+        </div>
+        <div class="header-right">
+            <div class="label">Datum rapport</div>
+            <div class="value">{vandaag}</div>
+        </div>
+    </div>
+    <div class="section">
+        <div class="section-title">Rit gegevens</div>
+        <div class="grid">
+            <div class="field"><label>Chauffeur</label><span>{chauffeur_naam}</span></div>
+            <div class="field"><label>Datum rit</label><span>{rit[4]}</span></div>
+            <div class="field"><label>Truck</label><span>{truck_kenteken}</span></div>
+            <div class="field"><label>Oplegger</label><span>{oplegger_nummer}</span></div>
+            <div class="field"><label>Starttijd</label><span>{rit[5] or '—'}</span></div>
+            <div class="field"><label>Eindtijd</label><span>{rit[6] or '—'}</span></div>
+        </div>
+        <div class="field" style="margin-top:10px;"><label>Bezochte filialen</label><span>{filialen_str}</span></div>
+    </div>
+    """
+
+    for i, schade in enumerate(schades, 1):
+        type_label = "Bestaande schade" if schade["type"] == "bestaand" else "Aangebrachte schade"
+        badge_class = "badge-oranje" if schade["type"] == "bestaand" else "badge-rood"
+        html += f"""
+    <div class="section">
+        <div class="section-title">Schade {i}</div>
+        <div class="schade">
+            <span class="badge {badge_class}">{type_label}</span>
+            {"<img src='" + schade['foto_b64'] + "'>" if schade['foto_b64'] else ""}
+            {"<div class='schade-omschr'>" + schade['omschrijving'] + "</div>" if schade['omschrijving'] else ""}
+        </div>
+    </div>
+        """
+
+    html += f"""
+    <div class="footer">Gegenereerd door RitLog · DC Zwaagdijk-Oost · {vandaag}</div>
+    </body>
+    </html>
+    """
+
+    pdf = WeasyHTML(string=html).write_pdf()
+    from flask import Response
+    return Response(
+        pdf,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=schade-rapport-rit-{rit_id}.pdf"}
+    )
 
 if __name__ == "__main__":
     init_db()
