@@ -41,7 +41,7 @@
     {% endif %}
     {% endwith %}
 
-    <form method="POST" action="/rit-bewerken-opslaan/{{ rit[0] }}">
+    <form method="POST" action="/rit-bewerken-opslaan/{{ rit[0] }}" enctype="multipart/form-data">
 
         <div class="card">
             <div class="card-header"><span class="card-title">Voertuig</span></div>
@@ -136,6 +136,63 @@
             </div>
         </div>
 
+        {% if huidige_schades %}
+        <div class="card">
+            <div class="card-header"><span class="card-title">Geregistreerde schades</span></div>
+            <div class="card-body">
+                {% for schade in huidige_schades %}
+                <div style="border:1px solid var(--grijs-mid);border-radius:10px;padding:12px;margin-bottom:12px;">
+                    {% if schade.foto_pad %}
+                    <img src="/uploads/{{ schade.foto_pad | basename }}" style="width:100%;border-radius:8px;margin-bottom:10px;object-fit:cover;max-height:160px;">
+                    {% endif %}
+                    <div class="form-group">
+                        <label>Type schade</label>
+                        <select name="bestaande_schadetype[]">
+                            <option value="aangebracht" {% if schade.type == 'aangebracht' %}selected{% endif %}>Aangebrachte schade</option>
+                            <option value="bestaand" {% if schade.type == 'bestaand' %}selected{% endif %}>Bestaande schade</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Omschrijving</label>
+                        <textarea name="bestaande_schadeomschrijving[]">{{ schade.omschrijving or '' }}</textarea>
+                    </div>
+                    <input type="hidden" name="bestaande_schadeid[]" value="{{ schade.id }}">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--rood);margin-top:6px;cursor:pointer;">
+                        <input type="checkbox" name="schade_verwijderen[]" value="{{ schade.id }}">
+                        Verwijder deze schade
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header"><span class="card-title">Nieuwe schade toevoegen</span></div>
+            <div class="card-body">
+                <div id="schades">
+                    <div class="schade-blok">
+                        <div class="form-group">
+                            <label>Type schade</label>
+                            <select name="schadetype[]">
+                                <option value="aangebracht">Aangebrachte schade</option>
+                                <option value="bestaand">Bestaande schade</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Foto uploaden</label>
+                            <input type="file" name="schadefoto[]" accept="image/*" multiple>
+                        </div>
+                        <div class="form-group">
+                            <label>Omschrijving</label>
+                            <textarea name="schadeomschrijving[]" placeholder="Beschrijf de schade..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" onclick="schadeToevoegen()" class="btn btn-outline btn-sm" style="margin-top:4px">+ Nog een schade toevoegen</button>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header"><span class="card-title">Opmerkingen</span></div>
             <div class="card-body">
@@ -181,6 +238,29 @@
         const nieuweSelect = eersteSelect.cloneNode(true);
         nieuweSelect.selectedIndex = 0;
         container.appendChild(nieuweSelect);
+    }
+
+    function schadeToevoegen() {
+        const container = document.getElementById("schades");
+        const blok = document.createElement("div");
+        blok.className = "schade-blok";
+        blok.innerHTML = `
+            <div class="form-group">
+                <label>Type schade</label>
+                <select name="schadetype[]">
+                    <option value="aangebracht">Aangebrachte schade</option>
+                    <option value="bestaand">Bestaande schade</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Foto uploaden</label>
+                <input type="file" name="schadefoto[]" accept="image/*" multiple>
+            </div>
+            <div class="form-group">
+                <label>Omschrijving</label>
+                <textarea name="schadeomschrijving[]" placeholder="Beschrijf de schade..."></textarea>
+            </div>`;
+        container.appendChild(blok);
     }
 </script>
 </body>
