@@ -189,17 +189,6 @@ def init_db():
         cursor.execute("ALTER TABLE ritten ADD COLUMN kilometers REAL DEFAULT 0")
     except:
         pass
-    accounts = [
-        ("admin", "Mvisser1", "admin", None),
-        ("demo", "Ritlog", "demo", None),
-        ("jevkovski", "Mvisser1", "chauffeur", None),
-    ]
-    for gebruikersnaam, wachtwoord, rol, chauffeur_id in accounts:
-        cursor.execute("SELECT id FROM gebruikers WHERE gebruikersnaam = ?", (gebruikersnaam,))
-        if not cursor.fetchone():
-            hash_ww = bcrypt.hashpw(wachtwoord.encode(), bcrypt.gensalt()).decode()
-            cursor.execute("INSERT INTO gebruikers (gebruikersnaam, wachtwoord, rol, chauffeur_id) VALUES (?, ?, ?, ?)",
-                           (gebruikersnaam, hash_ww, rol, chauffeur_id))
     conn.commit()
     conn.close()
 
