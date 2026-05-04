@@ -281,7 +281,7 @@ function toggleSchade(ritId, badge) {
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                             ${data.schades.map(s => `
                                 <div>
-                                    ${s.foto_pad ? `<img src="/uploads/${s.bestandsnaam}" style="width:100%;border-radius:8px;object-fit:cover;max-height:120px;">` : ''}
+                                    ${s.foto_pad ? `<img src="/uploads/${s.bestandsnaam}" style="width:100%;border-radius:8px;object-fit:contain;">` : ''}
                                     <div style="font-size:11px;margin-top:4px;font-weight:500;${s.type === 'aangebracht' ? 'color:#A32D2D' : 'color:#E65100'}">
                                         ${s.type === 'bestaand' ? 'Bestaande schade' : 'Aangebrachte schade'}
                                     </div>
