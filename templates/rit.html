@@ -69,7 +69,7 @@
             <div class="card-header"><span class="card-title">Datum & tijden</span></div>
             <div class="card-body">
                 <div class="form-group">
-                    <label>Datum</label>
+                    <label>Startdatum</label>
                     <input type="date" name="datum" id="datum">
                 </div>
                 <div class="form-row">
@@ -79,8 +79,13 @@
                     </div>
                     <div class="form-group">
                         <label>Eindtijd</label>
-                        <input type="time" name="eindtijd" id="eindtijd">
+                        <input type="time" name="eindtijd" id="eindtijd" onchange="checkNachtrit()">
                     </div>
+                </div>
+                <div class="form-group" id="einddatum-groep" style="display:none;">
+                    <label style="color:var(--oranje);">🌙 Nachtrit — einddatum</label>
+                    <input type="date" name="einddatum" id="einddatum">
+                    <div style="font-size:12px;color:var(--tekst-zacht);margin-top:4px;">De rit eindigt de volgende dag. Pas de datum aan als dat niet klopt.</div>
                 </div>
                 <div class="form-group">
                     <label>Pauze (minuten)</label>
@@ -187,6 +192,26 @@
 <script>
     document.getElementById("datum").valueAsDate = new Date();
 
+    function checkNachtrit() {
+        const starttijd = document.getElementById("starttijd").value;
+        const eindtijd = document.getElementById("eindtijd").value;
+        const groep = document.getElementById("einddatum-groep");
+        const einddatumVeld = document.getElementById("einddatum");
+        const datum = document.getElementById("datum").value;
+
+        if (starttijd && eindtijd && eindtijd <= starttijd) {
+            groep.style.display = "block";
+            if (datum && !einddatumVeld.value) {
+                const volgendeDag = new Date(datum);
+                volgendeDag.setDate(volgendeDag.getDate() + 1);
+                einddatumVeld.valueAsDate = volgendeDag;
+            }
+        } else {
+            groep.style.display = "none";
+            einddatumVeld.value = "";
+        }
+    }
+
     function filiaalToevoegen() {
         const container = document.getElementById("filialen");
         const eersteSelect = container.querySelector("select");
@@ -233,13 +258,11 @@
         else starttijdEl.style.borderColor = "";
         if (!eindtijdEl.value) { fouten.push("Vul een eindtijd in."); eindtijdEl.style.borderColor = "var(--rood)"; }
         else eindtijdEl.style.borderColor = "";
-        if (starttijdEl.value && eindtijdEl.value && eindtijdEl.value <= starttijdEl.value) {
-            fouten.push("Eindtijd moet na de starttijd zijn.");
-            eindtijdEl.style.borderColor = "var(--rood)";
-        }
+
         const filiaalSelects = document.querySelectorAll("[name='filiaal[]']");
         const heeftFiliaal = Array.from(filiaalSelects).some(s => s.value !== "");
         if (!heeftFiliaal) { fouten.push("Selecteer minimaal één filiaal."); filiaalSelects.forEach(s => s.style.borderColor = "var(--rood)"); }
+
         if (fouten.length > 0) { e.preventDefault(); alert(fouten.join("\n")); }
     });
 </script>
