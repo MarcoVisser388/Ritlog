@@ -118,6 +118,41 @@ def bereken_kilometers(filiaalnummers):
         print("FOUT BIJ API CALL:", e)
         return 0
 
+# ── Overlap check ──────────────────────────────────────────
+
+def controleer_overlap(chauffeur_id, datum, starttijd, eindtijd, einddatum, uitzondering_rit_id=None):
+    if not starttijd or not eindtijd:
+        return False
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    start_dt = datetime.datetime.fromisoformat(f"{datum}T{starttijd}")
+    eind_datum = einddatum if einddatum else datum
+    eind_dt = datetime.datetime.fromisoformat(f"{eind_datum}T{eindtijd}")
+    if uitzondering_rit_id:
+        cursor.execute("""SELECT id, datum, starttijd, eindtijd, einddatum FROM ritten
+            WHERE chauffeur_id = ? AND is_demo = 0 AND id != ? AND starttijd != '' AND eindtijd != ''""",
+            (chauffeur_id, uitzondering_rit_id))
+    else:
+        cursor.execute("""SELECT id, datum, starttijd, eindtijd, einddatum FROM ritten
+            WHERE chauffeur_id = ? AND is_demo = 0 AND starttijd != '' AND eindtijd != ''""",
+            (chauffeur_id,))
+    bestaande_ritten = cursor.fetchall()
+    conn.close()
+    for r in bestaande_ritten:
+        try:
+            r_start = datetime.datetime.fromisoformat(f"{r[1]}T{r[2]}")
+            r_eind_datum = r[4] if r[4] else r[1]
+            r_eind = datetime.datetime.fromisoformat(f"{r_eind_datum}T{r[3]}")
+            if start_dt < r_eind and eind_dt > r_start:
+                return True
+        except:
+            continue
+    return False
+
+# ── Hulp SQL voor uren berekening ──────────────────────────────────────────
+
+UREN_SQL = "CAST((julianday(COALESCE(einddatum, datum) || ' ' || eindtijd) - julianday(datum || ' ' || starttijd)) * 24 * 60 AS INTEGER) - CAST(pauze_minuten AS INTEGER)"
+
 # ── Database ──────────────────────────────────────────
 
 def init_db():
@@ -152,6 +187,7 @@ def init_db():
         pauze_minuten INTEGER DEFAULT 0,
         is_demo INTEGER DEFAULT 0,
         kilometers REAL DEFAULT 0,
+        einddatum TEXT,
         FOREIGN KEY (chauffeur_id) REFERENCES chauffeurs(id),
         FOREIGN KEY (truck_id) REFERENCES trucks(id),
         FOREIGN KEY (oplegger_id) REFERENCES opleggers(id))""")
@@ -175,7 +211,7 @@ def init_db():
         huisnummer TEXT,
         postcode TEXT,
         plaats TEXT)""")
-    for kolom in ["is_demo INTEGER DEFAULT 0", "kilometers REAL DEFAULT 0"]:
+    for kolom in ["is_demo INTEGER DEFAULT 0", "kilometers REAL DEFAULT 0", "einddatum TEXT"]:
         try:
             cursor.execute(f"ALTER TABLE ritten ADD COLUMN {kolom}")
         except:
@@ -249,7 +285,7 @@ def overzicht():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
-               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type)
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type), ritten.einddatum
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -261,7 +297,7 @@ def overzicht():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
-               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type)
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type), ritten.einddatum
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -273,7 +309,7 @@ def overzicht():
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
                ritten.pauze_minuten, ritten.is_demo, ritten.kilometers,
-               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type)
+               CASE WHEN COUNT(schades.id) > 0 THEN 1 ELSE 0 END, MAX(schades.type), ritten.einddatum
             FROM ritten
             LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
@@ -301,11 +337,11 @@ def overzicht():
         cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, tot, chauffeur_id))
     stats_filialen = cursor.fetchone()[0]
     if is_demo:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
+        cursor.execute(f"SELECT COALESCE(SUM({UREN_SQL}), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
     elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != ''", (van, tot))
+        cursor.execute(f"SELECT COALESCE(SUM({UREN_SQL}), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != ''", (van, tot))
     else:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+        cursor.execute(f"SELECT COALESCE(SUM({UREN_SQL}), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     minuten = cursor.fetchone()[0]
     stats_uren = round(minuten / 60, 1)
     if is_demo:
@@ -345,11 +381,11 @@ def stats():
         cursor.execute("SELECT COUNT(DISTINCT rf.filiaalnummer) FROM rit_filialen rf JOIN ritten r ON rf.rit_id = r.id WHERE r.datum >= ? AND r.datum <= ? AND r.chauffeur_id = ? AND r.is_demo = 0", (van, tot, chauffeur_id))
     filialen = cursor.fetchone()[0]
     if is_demo:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
+        cursor.execute(f"SELECT COALESCE(SUM({UREN_SQL}), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND is_demo = 1", (van, tot))
     elif is_admin:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != ''", (van, tot))
+        cursor.execute(f"SELECT COALESCE(SUM({UREN_SQL}), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != ''", (van, tot))
     else:
-        cursor.execute("SELECT COALESCE(SUM((CAST(strftime('%H', eindtijd) AS INTEGER) * 60 + CAST(strftime('%M', eindtijd) AS INTEGER)) - (CAST(strftime('%H', starttijd) AS INTEGER) * 60 + CAST(strftime('%M', starttijd) AS INTEGER)) - CAST(pauze_minuten AS INTEGER)), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
+        cursor.execute(f"SELECT COALESCE(SUM({UREN_SQL}), 0) FROM ritten WHERE datum >= ? AND datum <= ? AND starttijd != '' AND eindtijd != '' AND chauffeur_id = ? AND is_demo = 0", (van, tot, chauffeur_id))
     minuten = cursor.fetchone()[0]
     uren = round(minuten / 60, 1)
     if is_demo:
@@ -376,7 +412,7 @@ def overzicht_data():
     if is_admin:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers, ritten.einddatum
             FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
@@ -385,7 +421,7 @@ def overzicht_data():
     elif is_demo:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers, ritten.einddatum
             FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
@@ -394,7 +430,7 @@ def overzicht_data():
     else:
         cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers, ritten.einddatum
             FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
             LEFT JOIN trucks ON ritten.truck_id = trucks.id
             LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
@@ -409,10 +445,13 @@ def overzicht_data():
         schade_row = cursor.fetchone()
         heeft_schade = schade_row[0] > 0
         schade_type = schade_row[1] or 'aangebracht'
+        einddatum = r[11]
+        is_nachtrit = einddatum and einddatum != r[4]
         resultaat.append({
             "id": r[0], "chauffeur": r[1], "truck": r[2], "oplegger": r[3],
             "datum": r[4], "starttijd": r[5], "eindtijd": r[6],
             "opmerkingen": r[7], "pauze_minuten": r[8], "kilometers": r[10],
+            "einddatum": einddatum, "is_nachtrit": is_nachtrit,
             "filialen": filialen, "heeft_schade": heeft_schade,
             "schade_type": schade_type, "is_admin": is_admin
         })
@@ -614,6 +653,7 @@ def rit_opslaan():
     datum = request.form.get("datum", "").strip()
     starttijd = request.form.get("starttijd", "").strip()
     eindtijd = request.form.get("eindtijd", "").strip()
+    einddatum = request.form.get("einddatum", "").strip() or None
     opmerkingen = request.form.get("opmerkingen", "").strip()
     pauze_minuten = request.form.get("pauze_minuten", 0)
     filialen = request.form.getlist("filiaal[]")
@@ -625,13 +665,20 @@ def rit_opslaan():
     except (ValueError, TypeError):
         flash("Ongeldige invoer gedetecteerd.", "fout")
         return redirect(url_for("rit"))
+    if not einddatum and starttijd and eindtijd and eindtijd <= starttijd:
+        volgende_dag = (datetime.date.fromisoformat(datum) + datetime.timedelta(days=1)).isoformat()
+        einddatum = volgende_dag
+    if not is_demo and starttijd and eindtijd:
+        if controleer_overlap(chauffeur_id, datum, starttijd, eindtijd, einddatum):
+            flash("Je hebt al een rit die overlapt met deze tijden.", "fout")
+            return redirect(url_for("rit"))
     filialen_gefilterd = [f for f in filialen if f.strip()]
     kilometers = bereken_kilometers(filialen_gefilterd)
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
-    cursor.execute("""INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, is_demo, kilometers)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, 1 if is_demo else 0, kilometers))
+    cursor.execute("""INSERT INTO ritten (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, is_demo, kilometers, einddatum)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (chauffeur_id, truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, 1 if is_demo else 0, kilometers, einddatum))
     rit_id = cursor.lastrowid
     for volgorde, filiaalnummer in enumerate(filialen_gefilterd):
         cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)", (rit_id, filiaalnummer, volgorde + 1))
@@ -661,7 +708,7 @@ def rit_detail(rit_id):
     cursor = conn.cursor()
     cursor.execute("""SELECT ritten.id, ritten.chauffeur_id, ritten.truck_id, ritten.oplegger_id,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers FROM ritten WHERE id = ?""", (rit_id,))
+               ritten.pauze_minuten, ritten.is_demo, ritten.kilometers, ritten.einddatum FROM ritten WHERE id = ?""", (rit_id,))
     rit = cursor.fetchone()
     if not rit:
         flash("Rit niet gevonden.", "fout")
@@ -694,9 +741,10 @@ def rit_detail(rit_id):
     schades = [{"foto_pad": r[0], "omschrijving": r[1], "type": r[2] or "aangebracht"} for r in schades_rows]
     gewerkte_uren = None
     if rit[5] and rit[6]:
-        start = rit[5].split(":")
-        eind = rit[6].split(":")
-        minuten = (int(eind[0]) * 60 + int(eind[1])) - (int(start[0]) * 60 + int(start[1])) - (rit[8] or 0)
+        start_dt = datetime.datetime.fromisoformat(f"{rit[4]}T{rit[5]}")
+        eind_datum = rit[11] if rit[11] else rit[4]
+        eind_dt = datetime.datetime.fromisoformat(f"{eind_datum}T{rit[6]}")
+        minuten = int((eind_dt - start_dt).total_seconds() / 60) - (rit[8] or 0)
         gewerkte_uren = round(minuten / 60, 1)
     conn.close()
     return render_template("rit_detail.html", rit=rit, chauffeur_naam=chauffeur_naam,
@@ -731,7 +779,7 @@ def rit_bewerken(rit_id):
     cursor = conn.cursor()
     cursor.execute("""SELECT ritten.id, ritten.chauffeur_id, ritten.truck_id, ritten.oplegger_id,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.opmerkingen,
-               ritten.pauze_minuten FROM ritten WHERE id = ?""", (rit_id,))
+               ritten.pauze_minuten, ritten.einddatum FROM ritten WHERE id = ?""", (rit_id,))
     rit = cursor.fetchone()
     if not rit:
         flash("Rit niet gevonden.", "fout")
@@ -763,12 +811,12 @@ def rit_bewerken(rit_id):
 @login_vereist
 def rit_bewerken_opslaan(rit_id):
     is_admin = session.get("rol") == "admin"
-    chauffeur_id = session.get("chauffeur_id")
+    chauffeur_id_sessie = session.get("chauffeur_id")
     conn = sqlite3.connect("ritten.db")
     cursor = conn.cursor()
     cursor.execute("SELECT chauffeur_id FROM ritten WHERE id = ?", (rit_id,))
     rit = cursor.fetchone()
-    if not rit or (not is_admin and rit[0] != chauffeur_id):
+    if not rit or (not is_admin and rit[0] != chauffeur_id_sessie):
         flash("Geen toegang.", "fout")
         conn.close()
         return redirect(url_for("overzicht"))
@@ -777,6 +825,7 @@ def rit_bewerken_opslaan(rit_id):
     datum = request.form.get("datum", "").strip()
     starttijd = request.form.get("starttijd", "").strip()
     eindtijd = request.form.get("eindtijd", "").strip()
+    einddatum = request.form.get("einddatum", "").strip() or None
     opmerkingen = request.form.get("opmerkingen", "").strip()
     pauze_minuten = request.form.get("pauze_minuten", 0)
     filialen = request.form.getlist("filiaal[]")
@@ -788,11 +837,20 @@ def rit_bewerken_opslaan(rit_id):
         flash("Ongeldige invoer.", "fout")
         conn.close()
         return redirect(url_for("rit_bewerken", rit_id=rit_id))
+    if not einddatum and starttijd and eindtijd and eindtijd <= starttijd:
+        volgende_dag = (datetime.date.fromisoformat(datum) + datetime.timedelta(days=1)).isoformat()
+        einddatum = volgende_dag
+    chauffeur_id_rit = rit[0]
+    if starttijd and eindtijd:
+        if controleer_overlap(chauffeur_id_rit, datum, starttijd, eindtijd, einddatum, uitzondering_rit_id=rit_id):
+            flash("Deze tijden overlappen met een andere rit.", "fout")
+            conn.close()
+            return redirect(url_for("rit_bewerken", rit_id=rit_id))
     filialen_gefilterd = [f for f in filialen if f.strip()]
     kilometers = bereken_kilometers(filialen_gefilterd)
     cursor.execute("""UPDATE ritten SET truck_id=?, oplegger_id=?, datum=?, starttijd=?, eindtijd=?,
-                          opmerkingen=?, pauze_minuten=?, kilometers=? WHERE id=?""",
-                   (truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, kilometers, rit_id))
+                          opmerkingen=?, pauze_minuten=?, kilometers=?, einddatum=? WHERE id=?""",
+                   (truck_id, oplegger_id, datum, starttijd, eindtijd, opmerkingen, pauze_minuten, kilometers, einddatum, rit_id))
     cursor.execute("DELETE FROM rit_filialen WHERE rit_id = ?", (rit_id,))
     for volgorde, filiaalnummer in enumerate(filialen_gefilterd):
         cursor.execute("INSERT INTO rit_filialen (rit_id, filiaalnummer, volgorde) VALUES (?, ?, ?)",
@@ -833,7 +891,7 @@ def api_ritten():
     cursor = conn.cursor()
     cursor.execute("""SELECT ritten.id, chauffeurs.naam, trucks.kenteken, opleggers.opleggernummer,
                ritten.datum, ritten.starttijd, ritten.eindtijd, ritten.pauze_minuten,
-               ritten.kilometers, ritten.opmerkingen
+               ritten.kilometers, ritten.opmerkingen, ritten.einddatum
         FROM ritten LEFT JOIN chauffeurs ON ritten.chauffeur_id = chauffeurs.id
         LEFT JOIN trucks ON ritten.truck_id = trucks.id
         LEFT JOIN opleggers ON ritten.oplegger_id = opleggers.id
@@ -842,7 +900,8 @@ def api_ritten():
     conn.close()
     return jsonify([{"id": r[0], "chauffeur": r[1], "truck": r[2], "oplegger": r[3],
                      "datum": r[4], "starttijd": r[5], "eindtijd": r[6],
-                     "pauze_minuten": r[7], "kilometers": r[8], "opmerkingen": r[9]} for r in ritten])
+                     "pauze_minuten": r[7], "kilometers": r[8], "opmerkingen": r[9],
+                     "einddatum": r[10]} for r in ritten])
 
 @app.route("/api/filialen")
 def api_filialen():
@@ -950,11 +1009,8 @@ def schade_rapport(rit_id):
     filialen_str = " · ".join([f["filiaalnummer"] for f in filialen]) if filialen else "—"
     vandaag = datetime.date.today().strftime("%d-%m-%Y")
 
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="UTF-8">
+    html = f"""<!DOCTYPE html>
+    <html><head><meta charset="UTF-8">
     <style>
         body {{ font-family: Arial, sans-serif; margin: 0; padding: 0; color: #111; }}
         .header {{ background: #0F2A52; padding: 24px; display: flex; justify-content: space-between; align-items: flex-start; }}
@@ -976,18 +1032,10 @@ def schade_rapport(rit_id):
         .schade img {{ width: 100%; border-radius: 8px; margin: 8px 0; object-fit: contain; }}
         .schade-omschr {{ font-size: 13px; color: #333; margin-top: 4px; }}
         .footer {{ padding: 14px 24px; background: #f9f9f9; text-align: center; font-size: 11px; color: #999; }}
-    </style>
-    </head>
-    <body>
+    </style></head><body>
     <div class="header">
-        <div class="header-left">
-            <h1>Schade rapport</h1>
-            <p>RitLog — Automatisch gegenereerd</p>
-        </div>
-        <div class="header-right">
-            <div class="label">Datum rapport</div>
-            <div class="value">{vandaag}</div>
-        </div>
+        <div class="header-left"><h1>Schade rapport</h1><p>RitLog — Automatisch gegenereerd</p></div>
+        <div class="header-right"><div class="label">Datum rapport</div><div class="value">{vandaag}</div></div>
     </div>
     <div class="section">
         <div class="section-title">Rit gegevens</div>
@@ -1000,8 +1048,7 @@ def schade_rapport(rit_id):
             <div class="field"><label>Eindtijd</label><span>{rit[6] or '—'}</span></div>
         </div>
         <div class="field" style="margin-top:10px;"><label>Bezochte filialen</label><span>{filialen_str}</span></div>
-    </div>
-    """
+    </div>"""
 
     for i, schade in enumerate(schades, 1):
         type_label = "Bestaande schade" if schade["type"] == "bestaand" else "Aangebrachte schade"
@@ -1014,22 +1061,16 @@ def schade_rapport(rit_id):
             {"<img src='" + schade['foto_b64'] + "'>" if schade['foto_b64'] else ""}
             {"<div class='schade-omschr'>" + schade['omschrijving'] + "</div>" if schade['omschrijving'] else ""}
         </div>
-    </div>
-        """
+    </div>"""
 
     html += f"""
     <div class="footer">Gegenereerd door RitLog · DC Zwaagdijk-Oost · {vandaag}</div>
-    </body>
-    </html>
-    """
+    </body></html>"""
 
     pdf = WeasyHTML(string=html).write_pdf()
     from flask import Response
-    return Response(
-        pdf,
-        mimetype="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=schade-rapport-rit-{rit_id}.pdf"}
-    )
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename=schade-rapport-rit-{rit_id}.pdf"})
 
 if __name__ == "__main__":
     init_db()

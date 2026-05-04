@@ -73,18 +73,23 @@
             <div class="card-header"><span class="card-title">Datum & tijden</span></div>
             <div class="card-body">
                 <div class="form-group">
-                    <label>Datum</label>
-                    <input type="date" name="datum" value="{{ rit[4] }}" required>
+                    <label>Startdatum</label>
+                    <input type="date" name="datum" id="datum" value="{{ rit[4] }}" required>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Starttijd</label>
-                        <input type="time" name="starttijd" value="{{ rit[5] }}">
+                        <input type="time" name="starttijd" id="starttijd" value="{{ rit[5] }}">
                     </div>
                     <div class="form-group">
                         <label>Eindtijd</label>
-                        <input type="time" name="eindtijd" value="{{ rit[6] }}">
+                        <input type="time" name="eindtijd" id="eindtijd" value="{{ rit[6] }}" onchange="checkNachtrit()">
                     </div>
+                </div>
+                <div class="form-group" id="einddatum-groep" style="{% if rit[9] %}display:block{% else %}display:none{% endif %};">
+                    <label style="color:var(--oranje);">🌙 Nachtrit — einddatum</label>
+                    <input type="date" name="einddatum" id="einddatum" value="{{ rit[9] or '' }}">
+                    <div style="font-size:12px;color:var(--tekst-zacht);margin-top:4px;">De rit eindigt de volgende dag. Pas de datum aan als dat niet klopt.</div>
                 </div>
                 <div class="form-group">
                     <label>Pauze (minuten)</label>
@@ -143,7 +148,7 @@
                 {% for schade in huidige_schades %}
                 <div style="border:1px solid var(--grijs-mid);border-radius:10px;padding:12px;margin-bottom:12px;">
                     {% if schade.foto_pad %}
-                    <img src="/uploads/{{ schade.foto_pad | basename }}" style="width:100%;border-radius:8px;margin-bottom:10px;object-fit:cover;max-height:160px;">
+                    <img src="/uploads/{{ schade.foto_pad | basename }}" style="width:100%;border-radius:8px;margin-bottom:10px;object-fit:contain;">
                     {% endif %}
                     <div class="form-group">
                         <label>Type schade</label>
@@ -232,6 +237,26 @@
 </nav>
 
 <script>
+    function checkNachtrit() {
+        const starttijd = document.getElementById("starttijd").value;
+        const eindtijd = document.getElementById("eindtijd").value;
+        const groep = document.getElementById("einddatum-groep");
+        const einddatumVeld = document.getElementById("einddatum");
+        const datum = document.getElementById("datum").value;
+
+        if (starttijd && eindtijd && eindtijd <= starttijd) {
+            groep.style.display = "block";
+            if (datum && !einddatumVeld.value) {
+                const volgendeDag = new Date(datum);
+                volgendeDag.setDate(volgendeDag.getDate() + 1);
+                einddatumVeld.valueAsDate = volgendeDag;
+            }
+        } else {
+            groep.style.display = "none";
+            einddatumVeld.value = "";
+        }
+    }
+
     function filiaalToevoegen() {
         const container = document.getElementById("filialen");
         const eersteSelect = container.querySelector("select");
