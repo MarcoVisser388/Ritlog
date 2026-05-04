@@ -973,7 +973,7 @@ def schade_rapport(rit_id):
         .badge-oranje {{ background: #FFF3E0; color: #E65100; }}
         .schade {{ padding: 16px 0; border-bottom: 1px solid #eee; }}
         .schade:last-child {{ border-bottom: none; }}
-        .schade img {{ width: 100%; border-radius: 8px; margin: 8px 0; max-height: 200px; object-fit: cover; }}
+        .schade img {{ width: 100%; border-radius: 8px; margin: 8px 0; object-fit: contain; }}
         .schade-omschr {{ font-size: 13px; color: #333; margin-top: 4px; }}
         .footer {{ padding: 14px 24px; background: #f9f9f9; text-align: center; font-size: 11px; color: #999; }}
     </style>
