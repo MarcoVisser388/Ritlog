@@ -11,7 +11,7 @@
 <nav class="topbar">
     <a class="logo" href="/overzicht">
         <div class="logo-icon">
-            <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
         </div>
         RitLog
     </a>
@@ -25,123 +25,256 @@
 
 <div class="main">
     <div class="greeting">Beheer</div>
-    <div class="greeting-sub">Chauffeurs, trucks, opleggers en filialen</div>
+    <div class="greeting-sub">Overzicht en beheer van alle gegevens</div>
 
-    <!-- Chauffeurs -->
-    <div class="card">
-        <div class="card-header"><span class="card-title">Chauffeurs</span></div>
-        <div class="card-body">
-            <form method="POST" action="/chauffeur-toevoegen">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Werknemersnummer</label>
-                        <input type="text" name="werknemersnummer" placeholder="bijv. 724368" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Naam</label>
-                        <input type="text" name="naam" placeholder="Voor- en achternaam" required>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary" style="margin-top:4px">Toevoegen</button>
-            </form>
-            <ul class="beheer-list" style="margin-top:16px">
-                {% for c in chauffeurs %}
-                <li class="beheer-item">
-                    <div>
-                        <div class="beheer-item-label">{{ c[2] }}</div>
-                        <div class="beheer-item-sub">Nr. {{ c[1] }}</div>
-                    </div>
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
+    {% with berichten = get_flashed_messages(with_categories=true) %}
+    {% if berichten %}
+    {% for categorie, bericht in berichten %}
+    <div style="padding:12px 16px;border-radius:10px;margin-bottom:12px;font-size:14px;font-weight:500;
+    {% if categorie == 'fout' %}background:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;
+    {% else %}background:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;{% endif %}">
+        {{ bericht }}
     </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
 
-    <!-- Trucks -->
+    <!-- TRUCKS -->
     <div class="card">
         <div class="card-header"><span class="card-title">Trucks</span></div>
         <div class="card-body">
-            <form method="POST" action="/truck-toevoegen">
-                <div class="form-group">
-                    <label>Kenteken</label>
-                    <input type="text" name="kenteken" placeholder="bijv. 43-BZH-4" required>
+            {% for t in trucks %}
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--grijs-mid);">
+                <span style="font-size:14px;font-weight:500;">{{ t[1] }}</span>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="toggleWijzig('truck-{{ t[0] }}')" class="rit-knop rit-knop-lichtblauw" style="padding:6px 10px;font-size:12px;">Wijzigen</button>
+                    <form method="POST" action="/truck-verwijderen/{{ t[0] }}" onsubmit="return confirm('Truck {{ t[1] }} verwijderen?')">
+                        <button type="submit" class="rit-knop rit-knop-rood" style="padding:6px 10px;font-size:12px;">Verwijderen</button>
+                    </form>
                 </div>
-                <button type="submit" class="btn btn-primary" style="margin-top:4px">Toevoegen</button>
+            </div>
+            <div id="truck-{{ t[0] }}" style="display:none;padding:10px 0;">
+                <form method="POST" action="/truck-wijzigen/{{ t[0] }}" style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" name="kenteken" value="{{ t[1] }}" style="flex:1;">
+                    <button type="submit" class="btn btn-primary btn-sm">Opslaan</button>
+                </form>
+            </div>
+            {% endfor %}
+            <form method="POST" action="/truck-toevoegen" style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+                <input type="text" name="kenteken" placeholder="Nieuw kenteken" style="flex:1;">
+                <button type="submit" class="btn btn-primary btn-sm">+ Toevoegen</button>
             </form>
-            <ul class="beheer-list" style="margin-top:16px">
-                {% for t in trucks %}
-                {% if t[1] %}
-                <li class="beheer-item">
-                    <div class="beheer-item-label">{{ t[1] }}</div>
-                </li>
-                {% endif %}
-                {% endfor %}
-            </ul>
         </div>
     </div>
 
-    <!-- Opleggers -->
+    <!-- OPLEGGERS -->
     <div class="card">
         <div class="card-header"><span class="card-title">Opleggers</span></div>
         <div class="card-body">
-            <form method="POST" action="/oplegger-toevoegen">
-                <div class="form-group">
-                    <label>Opleggernummer</label>
-                    <input type="text" name="opleggernummer" placeholder="bijv. DD1491" required>
+            {% for o in opleggers %}
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--grijs-mid);">
+                <span style="font-size:14px;font-weight:500;">{{ o[1] }}</span>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="toggleWijzig('oplegger-{{ o[0] }}')" class="rit-knop rit-knop-lichtblauw" style="padding:6px 10px;font-size:12px;">Wijzigen</button>
+                    <form method="POST" action="/oplegger-verwijderen/{{ o[0] }}" onsubmit="return confirm('Oplegger {{ o[1] }} verwijderen?')">
+                        <button type="submit" class="rit-knop rit-knop-rood" style="padding:6px 10px;font-size:12px;">Verwijderen</button>
+                    </form>
                 </div>
-                <button type="submit" class="btn btn-primary" style="margin-top:4px">Toevoegen</button>
+            </div>
+            <div id="oplegger-{{ o[0] }}" style="display:none;padding:10px 0;">
+                <form method="POST" action="/oplegger-wijzigen/{{ o[0] }}" style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" name="opleggernummer" value="{{ o[1] }}" style="flex:1;">
+                    <button type="submit" class="btn btn-primary btn-sm">Opslaan</button>
+                </form>
+            </div>
+            {% endfor %}
+            <form method="POST" action="/oplegger-toevoegen" style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+                <input type="text" name="opleggernummer" placeholder="Bijv. DD1234" style="flex:1;">
+                <button type="submit" class="btn btn-primary btn-sm">+ Toevoegen</button>
             </form>
-            <ul class="beheer-list" style="margin-top:16px">
-                {% for o in opleggers %}
-                <li class="beheer-item">
-                    <div class="beheer-item-label">{{ o[1] }}</div>
-                </li>
-                {% endfor %}
-            </ul>
         </div>
     </div>
 
-    <!-- Filialen -->
+    <!-- FILIALEN -->
     <div class="card">
         <div class="card-header"><span class="card-title">Filialen</span></div>
         <div class="card-body">
-            <form method="POST" action="/filiaal-toevoegen">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Filiaalnummer</label>
-                        <input type="text" name="filiaalnummer" placeholder="bijv. 1205" required>
+            {% for f in filialen %}
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--grijs-mid);">
+                <div>
+                    <div style="font-size:14px;font-weight:500;">{{ f[1] }}</div>
+                    {% if f[5] %}<div style="font-size:12px;color:var(--tekst-zacht);">{{ f[2] }} {{ f[3] }}, {{ f[4] }}, {{ f[5] }}</div>{% endif %}
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px;">
+                    <button onclick="toggleWijzig('filiaal-{{ f[0] }}')" class="rit-knop rit-knop-lichtblauw" style="padding:6px 10px;font-size:12px;">Wijzigen</button>
+                    <form method="POST" action="/filiaal-verwijderen/{{ f[0] }}" onsubmit="return confirm('Filiaal {{ f[1] }} verwijderen?')">
+                        <button type="submit" class="rit-knop rit-knop-rood" style="padding:6px 10px;font-size:12px;">Verwijderen</button>
+                    </form>
+                </div>
+            </div>
+            <div id="filiaal-{{ f[0] }}" style="display:none;padding:10px 0;">
+                <form method="POST" action="/filiaal-wijzigen/{{ f[0] }}">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Straat</label>
+                            <input type="text" name="straat" value="{{ f[2] or '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label>Huisnummer</label>
+                            <input type="text" name="huisnummer" value="{{ f[3] or '' }}">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Postcode</label>
+                            <input type="text" name="postcode" value="{{ f[4] or '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label>Plaats</label>
+                            <input type="text" name="plaats" value="{{ f[5] or '' }}">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Opslaan</button>
+                </form>
+            </div>
+            {% endfor %}
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--grijs-mid);">
+                <div style="font-size:12px;font-weight:600;color:var(--tekst-zacht);margin-bottom:8px;">Nieuw filiaal toevoegen</div>
+                <form method="POST" action="/filiaal-toevoegen">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Filiaalnummer</label>
+                            <input type="text" name="filiaalnummer" placeholder="1234">
+                        </div>
+                        <div class="form-group">
+                            <label>Straat</label>
+                            <input type="text" name="straat" placeholder="Straatnaam">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Huisnummer</label>
+                            <input type="text" name="huisnummer" placeholder="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Postcode</label>
+                            <input type="text" name="postcode" placeholder="1234 AB">
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Plaats</label>
-                        <input type="text" name="plaats" placeholder="bijv. Tilburg">
+                        <input type="text" name="plaats" placeholder="Plaatsnaam">
                     </div>
-                </div>
+                    <button type="submit" class="btn btn-primary btn-sm">+ Toevoegen</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHAUFFEURS -->
+    <div class="card">
+        <div class="card-header"><span class="card-title">Chauffeurs</span></div>
+        <div class="card-body">
+            {% for c in chauffeurs %}
+            <div style="padding:8px 0;border-bottom:1px solid var(--grijs-mid);">
+                <div style="font-size:14px;font-weight:500;">{{ c[2] }}</div>
+                <div style="font-size:12px;color:var(--tekst-zacht);">Werknemersnummer: {{ c[1] }}</div>
+            </div>
+            {% endfor %}
+            <form method="POST" action="/chauffeur-toevoegen" style="margin-top:12px;">
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Straat</label>
-                        <input type="text" name="straat" placeholder="Straatnaam">
+                        <label>Naam</label>
+                        <input type="text" name="naam" placeholder="Voornaam Achternaam">
                     </div>
                     <div class="form-group">
-                        <label>Huisnummer</label>
-                        <input type="text" name="huisnummer" placeholder="bijv. 12">
+                        <label>Werknemersnummer</label>
+                        <input type="text" name="werknemersnummer" placeholder="12345">
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Postcode</label>
-                    <input type="text" name="postcode" placeholder="bijv. 5038 AB">
-                </div>
-                <button type="submit" class="btn btn-primary" style="margin-top:4px">Toevoegen</button>
+                <button type="submit" class="btn btn-primary btn-sm">+ Toevoegen</button>
             </form>
-            <ul class="beheer-list" style="margin-top:16px">
-                {% for f in filialen %}
-                <li class="beheer-item">
+        </div>
+    </div>
+
+    <!-- GEBRUIKERS -->
+    <div class="card">
+        <div class="card-header"><span class="card-title">Gebruikers</span></div>
+        <div class="card-body">
+            {% for g in gebruikers %}
+            <div style="padding:8px 0;border-bottom:1px solid var(--grijs-mid);">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
                     <div>
-                        <div class="beheer-item-label">{{ f[1] }}</div>
-                        <div class="beheer-item-sub">{{ f[2] }} {{ f[3] }}, {{ f[4] }} {{ f[5] }}</div>
+                        <div style="font-size:14px;font-weight:500;">{{ g[1] }}</div>
+                        <div style="font-size:12px;color:var(--tekst-zacht);">Rol: {{ g[2] }}{% if g[3] %} · {{ g[3] }}{% endif %}</div>
                     </div>
-                </li>
-                {% endfor %}
-            </ul>
+                    {% if g[1] != 'demo' %}
+                    <div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px;">
+                        <button onclick="toggleWijzig('gebruiker-{{ g[0] }}')" class="rit-knop rit-knop-lichtblauw" style="padding:6px 10px;font-size:12px;">Wachtwoord</button>
+                        <form method="POST" action="/gebruiker-verwijderen/{{ g[0] }}" onsubmit="return confirm('Gebruiker {{ g[1] }} verwijderen?')">
+                            <button type="submit" class="rit-knop rit-knop-rood" style="padding:6px 10px;font-size:12px;">Verwijderen</button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <span style="font-size:12px;color:var(--tekst-zacht);font-style:italic;">Beschermd</span>
+                    {% endif %}
+                </div>
+                {% if g[1] != 'demo' %}
+                <div id="gebruiker-{{ g[0] }}" style="display:none;padding:10px 0 4px 0;">
+                    <form method="POST" action="/gebruiker-wachtwoord/{{ g[0] }}" style="display:flex;gap:8px;align-items:center;">
+                        <input type="password" name="wachtwoord" placeholder="Nieuw wachtwoord" style="flex:1;">
+                        <button type="submit" class="btn btn-primary btn-sm">Opslaan</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--grijs-mid);">
+                <div style="font-size:12px;font-weight:600;color:var(--tekst-zacht);margin-bottom:8px;">Nieuwe gebruiker toevoegen</div>
+                <form method="POST" action="/gebruiker-toevoegen">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Gebruikersnaam</label>
+                            <input type="text" name="gebruikersnaam" placeholder="gebruikersnaam">
+                        </div>
+                        <div class="form-group">
+                            <label>Wachtwoord</label>
+                            <input type="password" name="wachtwoord" placeholder="••••••••">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Rol</label>
+                            <select name="rol">
+                                <option value="chauffeur">Chauffeur</option>
+                                <option value="admin">Admin</option>
+                                <option value="demo">Demo</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Koppel aan chauffeur</label>
+                            <select name="chauffeur_id">
+                                <option value="">— Geen koppeling —</option>
+                                {% for c in chauffeurs %}
+                                <option value="{{ c[0] }}">{{ c[2] }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">+ Toevoegen</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- DEMO WISSEN -->
+    <div class="card">
+        <div class="card-header"><span class="card-title">Demo data</span></div>
+        <div class="card-body">
+            <p style="font-size:13px;color:var(--tekst-zacht);margin-bottom:12px;">Verwijder alle demo ritten uit het systeem.</p>
+            <form method="POST" action="/demo-wissen" onsubmit="return confirm('Alle demo ritten verwijderen?')">
+                <button type="submit" class="btn btn-outline" style="color:var(--rood);border-color:var(--rood);">Demo ritten wissen</button>
+            </form>
         </div>
     </div>
 
@@ -160,11 +293,17 @@
         <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
         <span>Beheer</span>
     </a>
-        <a class="nav-item" href="/logout">
+    <a class="nav-item" href="/logout">
         <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
         <span>Uitloggen</span>
     </a>
 </nav>
 
+<script>
+function toggleWijzig(id) {
+    const el = document.getElementById(id);
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+</script>
 </body>
 </html>

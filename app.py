@@ -1029,7 +1029,10 @@ def schade_rapport(rit_id):
         .badge-oranje {{ background: #FFF3E0; color: #E65100; }}
         .schade {{ padding: 16px 0; border-bottom: 1px solid #eee; }}
         .schade:last-child {{ border-bottom: none; }}
-        .schade img {{ width: 100%; border-radius: 8px; margin: 8px 0; object-fit: contain; }}
+        .foto-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }}
+        .foto-item {{ border: 1px solid #eee; border-radius: 8px; padding: 8px; }}
+        .foto-item img {{ width: 100%; border-radius: 6px; object-fit: contain; }}
+        .foto-item .omschr {{ font-size: 11px; color: #333; margin-top: 4px; }}
         .schade-omschr {{ font-size: 13px; color: #333; margin-top: 4px; }}
         .footer {{ padding: 14px 24px; background: #f9f9f9; text-align: center; font-size: 11px; color: #999; }}
     </style></head><body>
@@ -1050,18 +1053,20 @@ def schade_rapport(rit_id):
         <div class="field" style="margin-top:10px;"><label>Bezochte filialen</label><span>{filialen_str}</span></div>
     </div>"""
 
-    for i, schade in enumerate(schades, 1):
+    foto_items = ""
+    for schade in schades:
         type_label = "Bestaande schade" if schade["type"] == "bestaand" else "Aangebrachte schade"
         badge_class = "badge-oranje" if schade["type"] == "bestaand" else "badge-rood"
-        html += f"""
+        foto_html = f"<img src='{schade['foto_b64']}'>" if schade['foto_b64'] else ""
+        omschr_html = f"<div class='omschr'>{schade['omschrijving']}</div>" if schade['omschrijving'] else ""
+        foto_items += f"<div class='foto-item'><span class='badge {badge_class}'>{type_label}</span>{foto_html}{omschr_html}</div>"
+
+    html += f"""
     <div class="section">
-        <div class="section-title">Schade {i}</div>
-        <div class="schade">
-            <span class="badge {badge_class}">{type_label}</span>
-            {"<img src='" + schade['foto_b64'] + "'>" if schade['foto_b64'] else ""}
-            {"<div class='schade-omschr'>" + schade['omschrijving'] + "</div>" if schade['omschrijving'] else ""}
-        </div>
-    </div>"""
+        <div class="section-title">Schades</div>
+        <div class="foto-grid">{foto_items}</div>
+    </div>
+    """
 
     html += f"""
     <div class="footer">Gegenereerd door RitLog · DC Zwaagdijk-Oost · {vandaag}</div>
@@ -1071,6 +1076,227 @@ def schade_rapport(rit_id):
     from flask import Response
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename=schade-rapport-rit-{rit_id}.pdf"})
+
+
+# ── Truck verwijderen / wijzigen ──
+
+@app.route("/truck-verwijderen/<int:truck_id>", methods=["POST"])
+@admin_vereist
+def truck_verwijderen(truck_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM ritten WHERE truck_id = ?", (truck_id,))
+    if cursor.fetchone()[0] > 0:
+        flash("Deze truck is gekoppeld aan ritten en kan niet verwijderd worden.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    cursor.execute("DELETE FROM trucks WHERE id = ?", (truck_id,))
+    conn.commit()
+    conn.close()
+    flash("Truck verwijderd.", "succes")
+    return redirect(url_for("beheer"))
+
+
+@app.route("/truck-wijzigen/<int:truck_id>", methods=["POST"])
+@admin_vereist
+def truck_wijzigen(truck_id):
+    kenteken = request.form.get("kenteken", "").strip()
+    if not valideer_kenteken(kenteken):
+        flash("Kenteken is ongeldig.", "fout")
+        return redirect(url_for("beheer"))
+    kenteken = formatteer_kenteken(kenteken)
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE trucks SET kenteken = ? WHERE id = ?", (kenteken, truck_id))
+        conn.commit()
+        flash("Truck bijgewerkt.", "succes")
+    except sqlite3.IntegrityError:
+        flash(f"Kenteken {kenteken} bestaat al.", "fout")
+    conn.close()
+    return redirect(url_for("beheer"))
+
+
+# ── Oplegger verwijderen / wijzigen ──
+
+@app.route("/oplegger-verwijderen/<int:oplegger_id>", methods=["POST"])
+@admin_vereist
+def oplegger_verwijderen(oplegger_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM ritten WHERE oplegger_id = ?", (oplegger_id,))
+    if cursor.fetchone()[0] > 0:
+        flash("Deze oplegger is gekoppeld aan ritten en kan niet verwijderd worden.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    cursor.execute("DELETE FROM opleggers WHERE id = ?", (oplegger_id,))
+    conn.commit()
+    conn.close()
+    flash("Oplegger verwijderd.", "succes")
+    return redirect(url_for("beheer"))
+
+
+@app.route("/oplegger-wijzigen/<int:oplegger_id>", methods=["POST"])
+@admin_vereist
+def oplegger_wijzigen(oplegger_id):
+    opleggernummer = request.form.get("opleggernummer", "").strip()
+    if not valideer_opleggernummer(opleggernummer):
+        flash("Opleggernummer is ongeldig.", "fout")
+        return redirect(url_for("beheer"))
+    opleggernummer = formatteer_opleggernummer(opleggernummer)
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE opleggers SET opleggernummer = ? WHERE id = ?", (opleggernummer, oplegger_id))
+        conn.commit()
+        flash("Oplegger bijgewerkt.", "succes")
+    except sqlite3.IntegrityError:
+        flash(f"Opleggernummer {opleggernummer} bestaat al.", "fout")
+    conn.close()
+    return redirect(url_for("beheer"))
+
+
+# ── Filiaal verwijderen / wijzigen ──
+
+@app.route("/filiaal-verwijderen/<int:filiaal_id>", methods=["POST"])
+@admin_vereist
+def filiaal_verwijderen(filiaal_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT filiaalnummer FROM filialen WHERE id = ?", (filiaal_id,))
+    filiaal = cursor.fetchone()
+    if not filiaal:
+        conn.close()
+        return redirect(url_for("beheer"))
+    cursor.execute("SELECT COUNT(*) FROM rit_filialen WHERE filiaalnummer = ?", (filiaal[0],))
+    if cursor.fetchone()[0] > 0:
+        flash("Dit filiaal is gekoppeld aan ritten en kan niet verwijderd worden.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    cursor.execute("DELETE FROM filialen WHERE id = ?", (filiaal_id,))
+    conn.commit()
+    conn.close()
+    flash("Filiaal verwijderd.", "succes")
+    return redirect(url_for("beheer"))
+
+
+@app.route("/filiaal-wijzigen/<int:filiaal_id>", methods=["POST"])
+@admin_vereist
+def filiaal_wijzigen(filiaal_id):
+    straat = request.form.get("straat", "").strip()
+    huisnummer = request.form.get("huisnummer", "").strip()
+    postcode = request.form.get("postcode", "").strip()
+    plaats = request.form.get("plaats", "").strip()
+    if postcode and not valideer_postcode(postcode):
+        flash("Postcode is ongeldig. Gebruik formaat: 1234 AB.", "fout")
+        return redirect(url_for("beheer"))
+    straat = formatteer_straat(straat) if straat else ""
+    plaats = formatteer_plaats(plaats) if plaats else ""
+    postcode = formatteer_postcode(postcode) if postcode else ""
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE filialen SET straat=?, huisnummer=?, postcode=?, plaats=? WHERE id=?",
+                   (straat, huisnummer, postcode, plaats, filiaal_id))
+    conn.commit()
+    conn.close()
+    flash("Filiaal bijgewerkt.", "succes")
+    return redirect(url_for("beheer"))
+
+
+# ── Gebruiker verwijderen / wachtwoord wijzigen ──
+
+@app.route("/gebruiker-verwijderen/<int:gebruiker_id>", methods=["POST"])
+@admin_vereist
+def gebruiker_verwijderen(gebruiker_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT gebruikersnaam FROM gebruikers WHERE id = ?", (gebruiker_id,))
+    gebruiker = cursor.fetchone()
+    if not gebruiker:
+        conn.close()
+        return redirect(url_for("beheer"))
+    if gebruiker[0] == "demo":
+        flash("Het demo account kan niet verwijderd worden.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    if gebruiker_id == session.get("gebruiker_id"):
+        flash("Je kunt je eigen account niet verwijderen.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    cursor.execute("DELETE FROM gebruikers WHERE id = ?", (gebruiker_id,))
+    conn.commit()
+    conn.close()
+    flash("Gebruiker verwijderd.", "succes")
+    return redirect(url_for("beheer"))
+
+
+@app.route("/gebruiker-wachtwoord/<int:gebruiker_id>", methods=["POST"])
+@admin_vereist
+def gebruiker_wachtwoord(gebruiker_id):
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT gebruikersnaam FROM gebruikers WHERE id = ?", (gebruiker_id,))
+    gebruiker = cursor.fetchone()
+    if not gebruiker or gebruiker[0] == "demo":
+        flash("Dit account kan niet aangepast worden.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    nieuw_wachtwoord = request.form.get("wachtwoord", "").strip()
+    if not nieuw_wachtwoord or len(nieuw_wachtwoord) < 4:
+        flash("Wachtwoord moet minimaal 4 tekens zijn.", "fout")
+        conn.close()
+        return redirect(url_for("beheer"))
+    hash_ww = bcrypt.hashpw(nieuw_wachtwoord.encode(), bcrypt.gensalt()).decode()
+    cursor.execute("UPDATE gebruikers SET wachtwoord = ? WHERE id = ?", (hash_ww, gebruiker_id))
+    conn.commit()
+    conn.close()
+    flash("Wachtwoord bijgewerkt.", "succes")
+    return redirect(url_for("beheer"))
+
+
+# ── Eigen wachtwoord wijzigen (voor alle gebruikers behalve demo) ──
+
+@app.route("/account")
+@login_vereist
+def account():
+    if session.get("rol") == "demo":
+        flash("Het demo account kan niet aangepast worden.", "fout")
+        return redirect(url_for("overzicht"))
+    return render_template("account.html")
+
+
+@app.route("/account-opslaan", methods=["POST"])
+@login_vereist
+def account_opslaan():
+    if session.get("rol") == "demo":
+        flash("Het demo account kan niet aangepast worden.", "fout")
+        return redirect(url_for("overzicht"))
+    huidig = request.form.get("huidig_wachtwoord", "").strip()
+    nieuw = request.form.get("nieuw_wachtwoord", "").strip()
+    bevestig = request.form.get("bevestig_wachtwoord", "").strip()
+    if not huidig or not nieuw or not bevestig:
+        flash("Vul alle velden in.", "fout")
+        return redirect(url_for("account"))
+    if nieuw != bevestig:
+        flash("Nieuwe wachtwoorden komen niet overeen.", "fout")
+        return redirect(url_for("account"))
+    if len(nieuw) < 4:
+        flash("Wachtwoord moet minimaal 4 tekens zijn.", "fout")
+        return redirect(url_for("account"))
+    conn = sqlite3.connect("ritten.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT wachtwoord FROM gebruikers WHERE id = ?", (session["gebruiker_id"],))
+    gebruiker = cursor.fetchone()
+    if not gebruiker or not bcrypt.checkpw(huidig.encode(), gebruiker[0].encode()):
+        flash("Huidig wachtwoord klopt niet.", "fout")
+        conn.close()
+        return redirect(url_for("account"))
+    hash_ww = bcrypt.hashpw(nieuw.encode(), bcrypt.gensalt()).decode()
+    cursor.execute("UPDATE gebruikers SET wachtwoord = ? WHERE id = ?", (hash_ww, session["gebruiker_id"]))
+    conn.commit()
+    conn.close()
+    flash("Wachtwoord gewijzigd.", "succes")
+    return redirect(url_for("account"))
 
 if __name__ == "__main__":
     init_db()
