@@ -1,64 +1,120 @@
-# RitLog
+# 🚛 RitLog
 
-RitLog is een webapplicatie die ik heb gebouwd om ritten bij te houden als vrachtwagenchauffeur. Ik werk bij een distributiecentrum in Zwaagdijk-Oost en rij dagelijks naar verschillende Action filialen door heel Nederland. We hadden geen goede manier om dit digitaal bij te houden, dus heb ik dit zelf gebouwd.
+> Een mobiele webapplicatie die het papieren rittenboek vervangt voor vrachtwagenchauffeurs.
 
-## Waarom dit project?
+![RitLog Login](screenshots/ritlog1.jpeg)
 
-Ik studeer HBO-ICT aan de Hogeschool van Amsterdam (deeltijd) en werk naast mijn studie als vrachtwagenchauffeur. Dit project heb ik gebouwd omdat ik iets wilde maken wat ik zelf echt gebruik. Elke dag vul ik mijn rit in — welke truck ik had, welke oplegger, welke filialen ik heb bezocht en hoe lang ik gewerkt heb.
+---
 
-De app draait op een Raspberry Pi die thuis staat. Via Cloudflare Tunnel is hij bereikbaar vanaf mijn telefoon, ook als ik onderweg ben.
+## 📖 Wat is RitLog?
 
-## Wat kan de app?
+RitLog is gebouwd vanuit een echte werkpraktijk. Als vrachtwagenchauffeur bij een distributiecentrum in Zwaagdijk-Oost reed ik dagelijks naar verschillende Action filialen door heel Nederland. Het bijhouden van ritten, werktijden en schades ging altijd op papier — totdat ik dit zelf digitaal heb gebouwd.
 
-- Rit invoeren met truck, oplegger, start- en eindtijd en pauze
-- Meerdere filialen per rit toevoegen in volgorde van bezoek
-- Schadefoto's uploaden met omschrijving
-- Kilometerberekening via Google Directions API — de app berekent automatisch de rijafstand van het DC naar alle filialen en terug
-- Overzicht van alle ritten met statistieken per dag, week, maand of jaar, inclusief pijltjes om terug te bladeren naar eerdere periodes
-- Schade-indicator op ritkaarten zodat ritten met schade direct zichtbaar zijn
-- Gewerkte uren worden automatisch berekend
-- Drie rollen: admin, chauffeur en demo-account
-- Beheerpagina voor trucks, opleggers, chauffeurs, filialen en gebruikers
-- REST API endpoints zodat de data ook in Power BI te gebruiken is
+De app vervangt het papieren rittenboek volledig en biedt een overzichtelijke, mobielvriendelijke oplossing voor het registreren van alles wat een chauffeur dagelijks bijhoudt.
 
-## Hoe is het gebouwd?
+---
 
-**Backend:** Python met Flask
+## 📱 Screenshots
 
-**Database:** SQLite met 7 tabellen die via foreign keys aan elkaar gekoppeld zijn: gebruikers, chauffeurs, trucks, opleggers, ritten, rit_filialen, schades en filialen
+| Login | Overzicht | Rit details |
+|-------|-----------|-------------|
+| ![Login](screenshots/ritlog1.jpeg) | ![Overzicht](screenshots/ritlog4.jpeg) | ![Details](screenshots/ritlog3.jpeg) |
 
-**Frontend:** HTML, CSS en JavaScript — mobile-first, want ik gebruik het dagelijks op mijn iPhone
+| Schade registratie | Schade rapport |
+|-------------------|----------------|
+| ![Schade](screenshots/ritlog2.jpeg) | ![Rapport](screenshots/ritlog5.jpeg) |
 
-**Hosting:** Raspberry Pi 4 thuis, bereikbaar via Cloudflare Tunnel. Beide services (Flask en Cloudflare) starten automatisch op als de Pi opstart via systemd
+---
 
-**Externe API:** Google Directions API voor de kilometerberekening. De API key staat in een .env bestand en komt niet in de code terecht
+## ✨ Functies
 
-**BI:** Power BI Desktop gekoppeld via REST API endpoints (/api/ritten, /api/filialen, etc.)
+- 🗓️ **Ritten registreren** — datum, voertuig, oplegger, chauffeur en bezochte filialen
+- ⏱️ **Werktijden bijhouden** — starttijd, eindtijd, pauze en automatisch berekende gewerkte uren
+- 📍 **Kilometerberekening** — automatisch via Google Maps API op basis van bezochte filialen
+- 📸 **Schaderegistratie** — foto's uploaden met beschrijving, onderscheid tussen nieuwe en bestaande schades
+- 📄 **PDF schaderapportages** — direct deelbaar vanuit de app
+- 📊 **Power BI koppeling** — managementdashboard voor overzicht over alle chauffeurs
+- 👤 **Accountbeheer** — meerdere chauffeurs kunnen inloggen met eigen account
+- 📅 **Overzichten** — dag, week, maand en jaar weergave
 
-De app valideert alle invoer — opleggernummers moeten beginnen met DD, ED, CDD of CED, postcodes moeten het juiste formaat hebben, eindtijd moet na de starttijd liggen, enzovoort. Alle database queries gebruiken parameterized statements tegen SQL injection. Wachtwoorden worden opgeslagen als bcrypt hash.
+---
 
-## Lokaal draaien
+## 🛠️ Technologie
+
+| Categorie | Technologie |
+|-----------|-------------|
+| Backend | Python Flask |
+| Database | SQLite |
+| Frontend | HTML, CSS, JavaScript |
+| Kaarten & Kilometers | Google Maps API |
+| Hosting | Raspberry Pi (thuis) |
+| Bereikbaar via | Cloudflare Tunnel |
+| Rapportages | PDF generatie |
+| Dashboard | Microsoft Power BI |
+| Versiebeheer | Git / GitHub |
+
+---
+
+## 🏗️ Architectuur
+
+```
+RitLog/
+├── app.py              # Flask applicatie & routes
+├── ritten.sqbpro       # SQLite database
+├── static/             # CSS, JavaScript, afbeeldingen
+├── templates/          # HTML templates (Jinja2)
+└── uploads/            # Geüploade schadefotos
+```
+
+---
+
+## 🚀 Lokaal draaien
+
+### Vereisten
+- Python 3.x
+- pip
+
+### Installatie
 
 ```bash
+# Repository klonen
 git clone https://github.com/MarcoVisser388/Ritlog.git
 cd Ritlog
-pip install flask werkzeug bcrypt python-dotenv requests
-```
 
-Maak een `.env` bestand aan in de projectmap met:
+# Virtuele omgeving aanmaken
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-```
-GOOGLE_API_KEY=jouw_key_hier
-```
+# Afhankelijkheden installeren
+pip install -r requirements.txt
 
-Start daarna de app:
-
-```bash
+# Applicatie starten
 python app.py
 ```
 
-Ga naar `http://localhost:5000`. Standaard inloggegevens: admin / Mvisser1.
+De app is dan bereikbaar op `http://localhost:5000`
 
-## Over mij
+---
 
-Ik ben Marco Visser, deeltijdstudent HBO-ICT aan de Hogeschool van Amsterdam. Naast mijn studie werk ik als vrachtwagenchauffeur bij een distributiecentrum. Dit project is één van de eerste dingen die ik volledig zelf heb gebouwd en ook echt dagelijks gebruik.
+## 💡 Waarom dit project?
+
+Ik studeer HBO-ICT aan de Hogeschool van Amsterdam (deeltijd) en werk naast mijn studie als vrachtwagenchauffeur. Elke dag vulde ik mijn rit in — welke truck, welke oplegger, welke filialen, hoe laat begonnen en gestopt. Dat ging allemaal op papier of in losse notities.
+
+Dit project heb ik gebouwd omdat ik iets wilde maken dat ik zelf écht gebruik. Geen tutorial-project, maar een echte oplossing voor een echt probleem.
+
+---
+
+## 👨‍💻 Over de ontwikkelaar
+
+**Marco Visser**  
+HBO-ICT Student @ Hogeschool van Amsterdam  
+Vrachtwagenchauffeur @ Distributiecentrum Zwaagdijk-Oost
+
+🌐 [threshold-dev.nl](https://threshold-dev.nl)  
+💼 [LinkedIn](https://www.linkedin.com/in/marco-visser-20664b11a/)  
+🐙 [GitHub](https://github.com/MarcoVisser388)  
+📧 vissermarco@live.nl
+
+---
+
+*Gebouwd met Python Flask, draaiend op een Raspberry Pi thuis.*
