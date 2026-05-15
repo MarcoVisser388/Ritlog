@@ -2,7 +2,7 @@
 
 > Een mobiele webapplicatie die het papieren rittenboek vervangt voor vrachtwagenchauffeurs.
 
-![RitLog Login](screenshots/ritlog1.jpeg)
+![RitLog Login](screenshots/login%20scherm.jpeg)
 
 ---
 
@@ -18,11 +18,11 @@ De app vervangt het papieren rittenboek volledig en biedt een overzichtelijke, m
 
 | Login | Overzicht | Rit details |
 |-------|-----------|-------------|
-| ![Login](screenshots/ritlog1.jpeg) | ![Overzicht](screenshots/ritlog4.jpeg) | ![Details](screenshots/ritlog3.jpeg) |
+| ![Login](screenshots/login%20scherm.jpeg) | ![Overzicht](screenshots/overzicht.jpeg) | ![Details](screenshots/rit%20details.jpeg) |
 
 | Schade registratie | Schade rapport |
 |-------------------|----------------|
-| ![Schade](screenshots/ritlog2.jpeg) | ![Rapport](screenshots/ritlog5.jpeg) |
+| ![Schade](screenshots/schade%20lijst.jpeg) | ![Rapport](screenshots/schade%20rapport.jpeg) |
 
 ---
 
